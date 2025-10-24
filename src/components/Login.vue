@@ -15,13 +15,13 @@
             
             <form @submit.prevent="handleLogin" class="login-form">
               <div class="form-group">
-                <label for="username" class="form-label">用户名</label>
+                <label for="email" class="form-label">邮箱</label>
                 <input 
-                  id="username"
-                  v-model="loginForm.username"
-                  type="text"
+                  id="email"
+                  v-model="loginForm.email"
+                  type="email"
                   class="form-input"
-                  placeholder="请输入用户名"
+                  placeholder="请输入邮箱地址"
                   required
                 />
               </div>
@@ -60,6 +60,22 @@
                 <span v-else class="loading-spinner"></span>
               </button>
             </form>
+
+            <!-- 错误消息 -->
+            <div v-if="errorMessage" class="message error-message">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 9V13M12 17H12.01M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>{{ errorMessage }}</span>
+            </div>
+
+            <!-- 成功消息 -->
+            <div v-if="successMessage" class="message success-message">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>{{ successMessage }}</span>
+            </div>
             
             <div class="login-footer">
               <p class="signup-text">
@@ -76,48 +92,92 @@
 
 <script>
 import Navbar from './Navbar.vue';
+import { useAuthStore } from '../stores/auth.js';
+import { auth, userProfile } from '../utils/supabase.js';
 
 export default {
   name: 'Login',
   components: {
     Navbar
   },
+  setup() {
+    const authStore = useAuthStore();
+    return { authStore };
+  },
   data() {
     return {
       loginForm: {
-        username: '',
+        email: '',
         password: '',
         rememberMe: false
       },
-      isLoading: false
+      isLoading: false,
+      errorMessage: '',
+      successMessage: ''
     }
   },
   computed: {
     isFormValid() {
-      return this.loginForm.username.trim() && this.loginForm.password.trim();
+      return this.loginForm.email.trim() && this.loginForm.password.trim();
     }
   },
   methods: {
     async handleLogin() {
       if (!this.isFormValid) return;
-      
+
       this.isLoading = true;
-      
+      this.errorMessage = '';
+      this.successMessage = '';
+
       try {
-        // 模拟登录请求
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        console.log('登录信息:', this.loginForm);
-        
-        // 这里可以添加实际的登录逻辑
-        // 例如调用API验证用户凭据
-        
-        // 登录成功后跳转到主页
-        this.$router.push('/');
-        
+        // 使用 Supabase 进行用户登录
+        const loginResult = await auth.signIn(
+          this.loginForm.email,
+          this.loginForm.password
+        );
+
+        if (loginResult.success) {
+          const user = loginResult.data.user;
+
+          // 登录成功，检查用户档案是否存在
+          try {
+            const profileResult = await userProfile.getProfile(user.id);
+
+            if (!profileResult.success) {
+              // 如果用户档案不存在，创建一个
+              // 从邮箱中提取用户名（@符号前的部分）
+              const username = user.email.split('@')[0];
+              await userProfile.createProfile({
+                user_id: user.id,
+                username: username,
+                email: user.email,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              });
+            }
+
+            // 更新认证状态
+            await this.authStore.login(user);
+
+            this.successMessage = '登录成功！';
+            setTimeout(() => {
+              this.$router.push('/');
+            }, 1000);
+          } catch (profileError) {
+            console.error('处理用户档案失败:', profileError);
+            // 即使档案处理失败，也更新登录状态
+            await this.authStore.login(user);
+            this.successMessage = '登录成功！';
+            setTimeout(() => {
+              this.$router.push('/');
+            }, 1000);
+          }
+        } else {
+          this.errorMessage = loginResult.message;
+        }
       } catch (error) {
         console.error('登录失败:', error);
-        // 这里可以添加错误处理逻辑
+        this.errorMessage = '登录失败，请重试';
       } finally {
         this.isLoading = false;
       }
@@ -323,6 +383,35 @@ export default {
 
 .signup-link:hover {
   color: #5a67d8;
+}
+
+/* 消息样式 */
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  margin-top: 20px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.error-message {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+}
+
+.success-message {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #059669;
+}
+
+.message svg {
+  flex-shrink: 0;
+  margin-top: 2px;
 }
 
 /* 响应式设计 */

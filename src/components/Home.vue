@@ -78,7 +78,12 @@ export default {
     }
   },
   mounted() {
-    this.initVoiceRecognition();
+    // 延迟初始化语音识别，避免阻塞渲染
+    this.$nextTick(() => {
+      setTimeout(() => {
+        this.initVoiceRecognition();
+      }, 100);
+    });
   },
   methods: {
     initVoiceRecognition() {

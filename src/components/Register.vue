@@ -10,22 +10,10 @@
           <div class="register-card">
             <div class="register-header">
               <h2 class="register-title">创建账户</h2>
-              <p class="register-subtitle">加入 TripCraft，开始您的智能旅行规划</p>
+              <p class="register-subtitle">使用邮箱注册，用户名将自动生成</p>
             </div>
             
             <form @submit.prevent="handleRegister" class="register-form">
-              <div class="form-group">
-                <label for="username" class="form-label">用户名</label>
-                <input 
-                  id="username"
-                  v-model="registerForm.username"
-                  type="text"
-                  class="form-input"
-                  placeholder="请输入用户名"
-                  required
-                />
-              </div>
-              
               <div class="form-group">
                 <label for="email" class="form-label">邮箱</label>
                 <input 
@@ -93,6 +81,26 @@
                 <span v-else class="loading-spinner"></span>
               </button>
             </form>
+
+            <!-- 错误消息 -->
+            <div v-if="errorMessage" class="message error-message">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 9V13M12 17H12.01M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>{{ errorMessage }}</span>
+              <button @click="clearMessages" class="close-btn">×</button>
+            </div>
+
+            <!-- 成功消息 -->
+            <div v-if="showSuccess && successMessage" class="message success-message">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 12L11 14L15 10M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C16.9706 3 21 7.02944 21 12Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>{{ successMessage }}</span>
+              <div class="success-details">
+                <p>正在跳转到登录页面...</p>
+              </div>
+            </div>
             
             <div class="register-footer">
               <p class="login-text">
@@ -109,6 +117,7 @@
 
 <script>
 import Navbar from './Navbar.vue';
+import { auth, userProfile } from '../utils/supabase.js';
 
 export default {
   name: 'Register',
@@ -118,13 +127,15 @@ export default {
   data() {
     return {
       registerForm: {
-        username: '',
         email: '',
         password: '',
         confirmPassword: '',
         agreeTerms: false
       },
-      isLoading: false
+      isLoading: false,
+      errorMessage: '',
+      successMessage: '',
+      showSuccess: false
     }
   },
   computed: {
@@ -134,8 +145,7 @@ export default {
              this.registerForm.password !== this.registerForm.confirmPassword;
     },
     isFormValid() {
-      return this.registerForm.username.trim() && 
-             this.registerForm.email.trim() && 
+      return this.registerForm.email.trim() && 
              this.registerForm.password.trim() && 
              this.registerForm.confirmPassword.trim() &&
              !this.passwordMismatch &&
@@ -147,25 +157,42 @@ export default {
       if (!this.isFormValid) return;
       
       this.isLoading = true;
+      this.errorMessage = '';
+      this.successMessage = '';
+      this.showSuccess = false;
       
       try {
-        // 模拟注册请求
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        console.log('注册信息:', this.registerForm);
-        
-        // 这里可以添加实际的注册逻辑
-        // 例如调用API创建用户账户
-        
-        // 注册成功后跳转到登录页面
-        this.$router.push('/login');
+        // 使用 Supabase 进行用户注册
+        const registerResult = await auth.signUp({
+          email: this.registerForm.email,
+          password: this.registerForm.password
+        });
+
+        if (registerResult.success) {
+          // 注册成功，显示成功消息
+          this.successMessage = registerResult.message;
+          this.showSuccess = true;
+          
+          // 3秒后跳转到登录页面
+          setTimeout(() => {
+            this.$router.push('/login');
+          }, 3000);
+        } else {
+          this.errorMessage = registerResult.message;
+        }
         
       } catch (error) {
         console.error('注册失败:', error);
-        // 这里可以添加错误处理逻辑
+        this.errorMessage = '注册失败，请重试';
       } finally {
         this.isLoading = false;
       }
+    },
+
+    clearMessages() {
+      this.errorMessage = '';
+      this.successMessage = '';
+      this.showSuccess = false;
     }
   }
 };
@@ -373,6 +400,66 @@ export default {
 
 .login-link:hover {
   color: #5a67d8;
+}
+
+/* 消息样式 */
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 12px;
+  margin-top: 20px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.error-message {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+}
+
+.success-message {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #059669;
+}
+
+.message svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 18px;
+  cursor: pointer;
+  margin-left: auto;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s ease;
+}
+
+.close-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.success-details {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.success-details p {
+  margin: 0;
 }
 
 /* 响应式设计 */

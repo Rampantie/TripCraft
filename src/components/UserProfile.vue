@@ -10,12 +10,13 @@
         <div class="user-info-card">
           <div class="user-avatar-section">
             <div class="user-avatar-large">
-              <svg width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <img v-if="authStore.avatarUrl" :src="authStore.avatarUrl" :alt="authStore.displayName" class="avatar-image-large" />
+              <svg v-else width="80" height="80" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z" fill="#6366F1"/>
                 <path d="M12 14C7.58172 14 4 17.5817 4 22H20C20 17.5817 16.4183 14 12 14Z" fill="#6366F1"/>
               </svg>
             </div>
-            <button class="edit-avatar-btn">更换头像</button>
+            <button class="edit-avatar-btn" @click="editProfile">更换头像</button>
           </div>
           <div class="user-details">
             <h2 class="user-name">{{ userInfo.name }}</h2>
@@ -34,6 +35,18 @@
                 <span class="stat-label">总花费</span>
               </div>
             </div>
+          </div>
+          
+          <!-- 登出按钮 -->
+          <div class="logout-section">
+            <button class="logout-btn" @click="handleLogout">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M9 21H5C4.46957 21 3.96086 20.7893 3.58579 20.4142C3.21071 20.0391 3 19.5304 3 19V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M16 17L21 12L16 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              退出登录
+            </button>
           </div>
         </div>
 
@@ -258,18 +271,19 @@
 
 <script>
 import Navbar from './Navbar.vue';
+import { useAuthStore } from '../stores/auth.js';
 
 export default {
   name: 'UserProfile',
   components: {
     Navbar
   },
+  setup() {
+    const authStore = useAuthStore();
+    return { authStore };
+  },
   data() {
     return {
-      userInfo: {
-        name: '张三',
-        email: 'zhangsan@example.com'
-      },
       preferences: {
         attractionType: 'mixed',
         travelPace: 'moderate',
@@ -307,10 +321,17 @@ export default {
           budget: 35000,
           status: 'planning'
         }
-      ]
+      ],
+      isLoading: true
     }
   },
   computed: {
+    userInfo() {
+      return {
+        name: this.authStore.displayName,
+        email: this.authStore.userEmail
+      };
+    },
     completedTrips() {
       return this.travelPlans.filter(plan => plan.status === 'completed').length;
     },
@@ -325,13 +346,60 @@ export default {
       return 5000;
     }
   },
+  async mounted() {
+    // 确保用户已登录
+    if (!this.authStore.isAuthenticated) {
+      this.$router.push('/login');
+      return;
+    }
+
+    // 加载用户数据
+    await this.loadUserData();
+    this.isLoading = false;
+  },
   methods: {
+    async loadUserData() {
+      try {
+        // 如果用户档案已加载，获取偏好设置
+        if (this.authStore.userProfile?.preferences) {
+          this.preferences = { ...this.preferences, ...this.authStore.userProfile.preferences };
+        }
+        
+        // 这里可以添加加载旅行计划的逻辑
+        // await this.loadTravelPlans();
+      } catch (error) {
+        console.error('加载用户数据失败:', error);
+      }
+    },
+    
     handleAvatarClick() {
       console.log('用户头像被点击');
     },
-    savePreferences() {
-      console.log('保存偏好设置:', this.preferences);
-      // 这里可以添加保存偏好的逻辑
+    
+    async savePreferences() {
+      try {
+        const result = await this.authStore.updateUserProfile({
+          preferences: this.preferences
+        });
+        
+        if (result.success) {
+          console.log('偏好设置保存成功');
+          // 可以添加成功提示
+        } else {
+          console.error('保存偏好设置失败:', result.error);
+        }
+      } catch (error) {
+        console.error('保存偏好设置失败:', error);
+      }
+    },
+    
+    async handleLogout() {
+      try {
+        await this.authStore.logout();
+        this.$router.push('/login');
+      } catch (error) {
+        console.error('登出失败:', error);
+      }
     },
     addNewPlan() {
       console.log('添加新计划');
@@ -422,6 +490,47 @@ export default {
 .edit-avatar-btn:hover {
   background: #667eea;
   color: white;
+}
+
+.avatar-image-large {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* 登出按钮样式 */
+.logout-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: center;
+}
+
+.logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+  background: #fecaca;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.2);
+}
+
+.logout-btn:active {
+  transform: translateY(0);
 }
 
 .user-details {
