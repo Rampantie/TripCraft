@@ -1,6 +1,6 @@
 <template>
   <div id="app">
-    <h1>Welcome to AI Traveller</h1>
+    <router-view />
   </div>
 </template>
 
@@ -11,10 +11,14 @@ export default {
 </script>
 
 <style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
 #app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  min-height: 100vh;
 }
 </style>
