@@ -118,10 +118,10 @@ export default {
       showUserDropdown: false,
       hideTimeout: null,
       userStats: {
-        travelPlans: 3,
-        completedTrips: 1,
-        totalSpending: 11500,
-        favoriteType: '人文景点'
+        travelPlans: 0,
+        completedTrips: 0,
+        totalSpending: 0,
+        favoriteType: '暂无偏好'
       }
     }
   },
@@ -130,6 +130,14 @@ export default {
     this.$nextTick(() => {
       this.authStore.initAuth();
       this.authStore.setupAuthListener();
+      this.loadUserStats();
+      
+      // 监听用户档案变化
+      this.$watch(() => this.authStore.userProfile, (newProfile) => {
+        if (newProfile) {
+          this.loadUserStats();
+        }
+      }, { deep: true });
     });
   },
   beforeUnmount() {
@@ -176,6 +184,46 @@ export default {
       } catch (error) {
         console.error('登出失败:', error);
       }
+    },
+
+    async loadUserStats() {
+      try {
+        // 确保用户已登录
+        if (!this.authStore.isAuthenticated) {
+          return;
+        }
+
+        // 确保用户档案已加载
+        if (!this.authStore.userProfile) {
+          await this.authStore.loadUserProfile();
+        }
+
+        // 从用户档案中获取统计数据
+        if (this.authStore.userProfile) {
+          const profile = this.authStore.userProfile;
+          
+          // 更新统计数据
+          this.userStats = {
+            travelPlans: profile.travel_plans_count || 0,
+            completedTrips: profile.completed_trips_count || 0,
+            totalSpending: profile.total_spending || 0,
+            favoriteType: this.getFavoriteTypeText(profile.preferences?.attractionType)
+          };
+
+          console.log('导航栏统计数据已更新:', this.userStats);
+        }
+      } catch (error) {
+        console.error('加载用户统计数据失败:', error);
+      }
+    },
+
+    getFavoriteTypeText(attractionType) {
+      const typeMap = {
+        'cultural': '人文景点',
+        'natural': '自然景点',
+        'mixed': '混合类型'
+      };
+      return typeMap[attractionType] || '暂无偏好';
     }
   }
 };

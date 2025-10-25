@@ -16,14 +16,13 @@
                 <path d="M12 14C7.58172 14 4 17.5817 4 22H20C20 17.5817 16.4183 14 12 14Z" fill="#6366F1"/>
               </svg>
             </div>
-            <button class="edit-avatar-btn" @click="editProfile">更换头像</button>
           </div>
           <div class="user-details">
             <h2 class="user-name">{{ userInfo.name }}</h2>
             <p class="user-email">{{ userInfo.email }}</p>
             <div class="user-stats">
               <div class="stat-item">
-                <span class="stat-number">{{ travelPlans.length }}</span>
+                <span class="stat-number">{{ travelPlans }}</span>
                 <span class="stat-label">旅行计划</span>
               </div>
               <div class="stat-item">
@@ -31,7 +30,7 @@
                 <span class="stat-label">已完成</span>
               </div>
               <div class="stat-item">
-                <span class="stat-number">¥{{ totalSpending.toLocaleString() }}</span>
+                <span class="stat-number">¥{{ (totalSpending || 0).toLocaleString() }}</span>
                 <span class="stat-label">总花费</span>
               </div>
             </div>
@@ -53,7 +52,10 @@
         <!-- 旅行偏好设置 -->
         <div class="preferences-card">
           <h3 class="card-title">旅行偏好设置</h3>
-          <div class="preferences-grid">
+          <div v-if="isLoading" class="loading-message">
+            正在加载偏好设置...
+          </div>
+          <div v-else class="preferences-grid">
             <div class="preference-item">
               <label class="preference-label">景点类型偏好</label>
               <div class="preference-options">
@@ -186,9 +188,12 @@
               </div>
             </div>
           </div>
-          <button class="save-preferences-btn" @click="savePreferences">
-            保存偏好设置
+          <button class="save-preferences-btn" @click="savePreferences" :disabled="isSavingPreferences">
+            {{ isSavingPreferences ? '保存中...' : '保存偏好设置' }}
           </button>
+          <div v-if="saveMessage" class="save-message" :class="{ 'success': saveMessage.includes('成功'), 'error': saveMessage.includes('失败') }">
+            {{ saveMessage }}
+          </div>
         </div>
 
         <!-- 旅行计划列表 -->
@@ -215,7 +220,7 @@
                 <div class="plan-details">
                   <span class="plan-date">{{ plan.startDate }} - {{ plan.endDate }}</span>
                   <span class="plan-duration">{{ plan.duration }}天</span>
-                  <span class="plan-budget">¥{{ plan.budget.toLocaleString() }}</span>
+                  <span class="plan-budget">¥{{ (plan.budget || 0).toLocaleString() }}</span>
                 </div>
               </div>
               <div class="plan-actions">
@@ -237,15 +242,15 @@
           <div class="spending-stats">
             <div class="spending-item">
               <div class="spending-label">总花费</div>
-              <div class="spending-amount">¥{{ totalSpending.toLocaleString() }}</div>
+              <div class="spending-amount">¥{{ (totalSpending || 0).toLocaleString() }}</div>
             </div>
             <div class="spending-item">
               <div class="spending-label">平均每次</div>
-              <div class="spending-amount">¥{{ averageSpending.toLocaleString() }}</div>
+              <div class="spending-amount">¥{{ (averageSpending || 0).toLocaleString() }}</div>
             </div>
             <div class="spending-item">
               <div class="spending-label">本月花费</div>
-              <div class="spending-amount">¥{{ monthlySpending.toLocaleString() }}</div>
+              <div class="spending-amount">¥{{ (monthlySpending || 0).toLocaleString() }}</div>
             </div>
           </div>
           <div class="spending-chart">
@@ -272,6 +277,7 @@
 <script>
 import Navbar from './Navbar.vue';
 import { useAuthStore } from '../stores/auth.js';
+import supabase from '../utils/supabase.js';
 
 export default {
   name: 'UserProfile',
@@ -280,7 +286,7 @@ export default {
   },
   setup() {
     const authStore = useAuthStore();
-    return { authStore };
+    return { authStore, supabase };
   },
   data() {
     return {
@@ -290,39 +296,10 @@ export default {
         accommodation: 'comfortable',
         transportation: 'mixed'
       },
-      travelPlans: [
-        {
-          id: 1,
-          title: '日本关西之旅',
-          destination: '大阪、京都、奈良',
-          startDate: '2024-03-15',
-          endDate: '2024-03-22',
-          duration: 8,
-          budget: 15000,
-          status: 'completed'
-        },
-        {
-          id: 2,
-          title: '云南大理游',
-          destination: '大理、丽江、香格里拉',
-          startDate: '2024-04-10',
-          endDate: '2024-04-17',
-          duration: 8,
-          budget: 8000,
-          status: 'planning'
-        },
-        {
-          id: 3,
-          title: '欧洲三国游',
-          destination: '法国、意大利、西班牙',
-          startDate: '2024-06-01',
-          endDate: '2024-06-15',
-          duration: 15,
-          budget: 35000,
-          status: 'planning'
-        }
-      ],
-      isLoading: true
+      // 旅行计划数据现在从数据库获取
+      isLoading: true,
+      isSavingPreferences: false,
+      saveMessage: ''
     }
   },
   computed: {
@@ -332,11 +309,17 @@ export default {
         email: this.authStore.userEmail
       };
     },
+    travelPlans() {
+      // 直接从用户档案获取旅行计划数
+      return this.authStore.userProfile?.travel_plans_count || 0;
+    },
     completedTrips() {
-      return this.travelPlans.filter(plan => plan.status === 'completed').length;
+      // 直接从用户档案获取已完成旅行数
+      return this.authStore.userProfile?.completed_trips_count || 0;
     },
     totalSpending() {
-      return this.travelPlans.reduce((total, plan) => total + plan.budget, 0);
+      // 直接从用户档案获取总花费
+      return this.authStore.userProfile?.total_spending || 0;
     },
     averageSpending() {
       return this.completedTrips > 0 ? Math.round(this.totalSpending / this.completedTrips) : 0;
@@ -360,10 +343,23 @@ export default {
   methods: {
     async loadUserData() {
       try {
-        // 如果用户档案已加载，获取偏好设置
-        if (this.authStore.userProfile?.preferences) {
-          this.preferences = { ...this.preferences, ...this.authStore.userProfile.preferences };
+        // 确保用户档案已加载
+        if (!this.authStore.userProfile) {
+          await this.authStore.loadUserProfile();
         }
+
+        // 加载用户偏好设置
+        if (this.authStore.userProfile?.preferences) {
+          console.log('加载用户偏好设置:', this.authStore.userProfile.preferences);
+          this.preferences = { 
+            ...this.preferences, 
+            ...this.authStore.userProfile.preferences 
+          };
+        } else {
+          console.log('用户暂无偏好设置，使用默认值');
+        }
+
+        // 数据现在直接从 authStore.userProfile 获取
         
         // 这里可以添加加载旅行计划的逻辑
         // await this.loadTravelPlans();
@@ -377,19 +373,35 @@ export default {
     },
     
     async savePreferences() {
+      this.isSavingPreferences = true;
+      this.saveMessage = '';
+      
       try {
+        console.log('保存偏好设置:', this.preferences);
+        
         const result = await this.authStore.updateUserProfile({
           preferences: this.preferences
         });
         
         if (result.success) {
+          this.saveMessage = '偏好设置保存成功！';
           console.log('偏好设置保存成功');
-          // 可以添加成功提示
+          
+          // 数据现在直接从 authStore.userProfile 获取，自动同步
+          
+          // 3秒后清除成功消息
+          setTimeout(() => {
+            this.saveMessage = '';
+          }, 3000);
         } else {
+          this.saveMessage = '保存失败，请重试';
           console.error('保存偏好设置失败:', result.error);
         }
       } catch (error) {
+        this.saveMessage = '保存失败，请重试';
         console.error('保存偏好设置失败:', error);
+      } finally {
+        this.isSavingPreferences = false;
       }
     },
     
@@ -421,6 +433,25 @@ export default {
         'cancelled': '已取消'
       };
       return statusMap[status] || status;
+    },
+
+    updateNavbarStats() {
+      // 通过事件总线通知导航栏更新统计数据
+      this.$emit('update-navbar-stats', {
+        travelPlans: this.travelPlans.length,
+        completedTrips: this.completedTrips,
+        totalSpending: this.totalSpending,
+        favoriteType: this.getFavoriteTypeText(this.preferences.attractionType)
+      });
+    },
+
+    getFavoriteTypeText(attractionType) {
+      const typeMap = {
+        'cultural': '人文景点',
+        'natural': '自然景点',
+        'mixed': '混合类型'
+      };
+      return typeMap[attractionType] || '暂无偏好';
     }
   }
 };
@@ -474,22 +505,6 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.edit-avatar-btn {
-  background: rgba(102, 126, 234, 0.1);
-  color: #667eea;
-  border: 1px solid #667eea;
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.edit-avatar-btn:hover {
-  background: #667eea;
-  color: white;
 }
 
 .avatar-image-large {
@@ -642,6 +657,45 @@ export default {
 .save-preferences-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(102, 126, 234, 0.6);
+}
+
+.save-preferences-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 保存消息样式 */
+.save-message {
+  margin-top: 12px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.save-message.success {
+  background: #d1fae5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.save-message.error {
+  background: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+/* 加载状态样式 */
+.loading-message {
+  text-align: center;
+  padding: 40px 20px;
+  color: #666;
+  font-size: 16px;
+  font-style: italic;
 }
 
 /* 旅行计划卡片 */
