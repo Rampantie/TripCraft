@@ -16,6 +16,13 @@
                 <path d="M12 14C7.58172 14 4 17.5817 4 22H20C20 17.5817 16.4183 14 12 14Z" fill="#6366F1"/>
               </svg>
             </div>
+            <button class="change-avatar-btn" @click="showAvatarSelector">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 20H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M16.5 3.5C16.8978 3.10218 17.4374 2.87868 18 2.87868C18.5626 2.87868 19.1022 3.10218 19.5 3.5C19.8978 3.89782 20.1213 4.43739 20.1213 5C20.1213 5.56261 19.8978 6.10218 19.5 6.5L12 14L8 10L16.5 3.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              更换头像
+            </button>
           </div>
           <div class="user-details">
             <h2 class="user-name">{{ userInfo.name }}</h2>
@@ -269,20 +276,31 @@
             </div>
           </div>
         </div>
+        
+        
       </div>
     </main>
+    
+    <!-- 头像选择器 -->
+    <AvatarSelector 
+      :show="showAvatarSelectorModal" 
+      @close="hideAvatarSelector"
+      @confirm="handleAvatarConfirm"
+    />
   </div>
 </template>
 
 <script>
 import Navbar from './Navbar.vue';
+import AvatarSelector from './AvatarSelector.vue';
 import { useAuthStore } from '../stores/auth.js';
 import supabase from '../utils/supabase.js';
 
 export default {
   name: 'UserProfile',
   components: {
-    Navbar
+    Navbar,
+    AvatarSelector
   },
   setup() {
     const authStore = useAuthStore();
@@ -299,7 +317,8 @@ export default {
       // 旅行计划数据现在从数据库获取
       isLoading: true,
       isSavingPreferences: false,
-      saveMessage: ''
+      saveMessage: '',
+      showAvatarSelectorModal: false
     }
   },
   computed: {
@@ -452,6 +471,47 @@ export default {
         'mixed': '混合类型'
       };
       return typeMap[attractionType] || '暂无偏好';
+    },
+
+    showAvatarSelector() {
+      this.showAvatarSelectorModal = true;
+    },
+
+    hideAvatarSelector() {
+      this.showAvatarSelectorModal = false;
+    },
+
+    async handleAvatarConfirm(avatarUrl) {
+      try {
+        console.log('选择头像:', avatarUrl);
+        
+        // 更新用户档案中的头像
+        const result = await this.authStore.updateUserProfile({
+          avatar_url: avatarUrl
+        });
+
+        if (result.success) {
+          console.log('头像更新成功');
+          this.showMessage('头像更新成功！', true);
+        } else {
+          console.error('头像更新失败:', result.error);
+          this.showMessage('头像更新失败，请重试', false);
+        }
+      } catch (error) {
+        console.error('头像更新失败:', error);
+        this.showMessage('头像更新失败，请重试', false);
+      }
+    },
+
+    showMessage(text, success) {
+      this.saveMessage = text;
+      this.isSuccess = success;
+      
+      if (success) {
+        setTimeout(() => {
+          this.saveMessage = '';
+        }, 3000);
+      }
     }
   }
 };
@@ -512,6 +572,30 @@ export default {
   height: 100%;
   border-radius: 50%;
   object-fit: cover;
+}
+
+/* 更换头像按钮 */
+.change-avatar-btn {
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  border: 1px solid #667eea;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.change-avatar-btn:hover {
+  background: #667eea;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 /* 登出按钮样式 */

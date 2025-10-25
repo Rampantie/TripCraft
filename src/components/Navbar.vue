@@ -1,7 +1,7 @@
 <template>
   <nav class="navbar">
     <div class="nav-container">
-      <div class="nav-brand">
+      <div class="nav-brand" @click="goToHome">
         <h1>{{ brandName }}</h1>
       </div>
         <div class="nav-user">
@@ -224,6 +224,10 @@ export default {
         'mixed': '混合类型'
       };
       return typeMap[attractionType] || '暂无偏好';
+    },
+
+    goToHome() {
+      this.$router.push('/');
     }
   }
 };
@@ -249,6 +253,15 @@ export default {
   justify-content: space-between;
   align-items: center;
   height: 64px;
+}
+
+.nav-brand {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nav-brand:hover {
+  transform: scale(1.05);
 }
 
 .nav-brand h1 {
