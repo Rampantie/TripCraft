@@ -5,6 +5,8 @@ import Login from '../components/Login.vue';
 import Register from '../components/Register.vue';
 import UserProfile from '../components/UserProfile.vue';
 import TripPlanning from '../components/TripPlanning.vue';
+import ForgotPassword from '../components/ForgotPassword.vue';
+import ResetPassword from '../components/ResetPassword.vue';
 
 const routes = [
   {
@@ -32,6 +34,16 @@ const routes = [
     path: '/planning',
     name: 'TripPlanning',
     component: TripPlanning
+  },
+  {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: ForgotPassword
+  },
+  {
+    path: '/reset-password',
+    name: 'ResetPassword',
+    component: ResetPassword
   }
 ];
 

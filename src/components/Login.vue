@@ -47,7 +47,7 @@
                   />
                   <span class="checkbox-label">记住我</span>
                 </label>
-                <a href="#" class="forgot-password">忘记密码？</a>
+                <router-link to="/forgot-password" class="forgot-password">忘记密码？</router-link>
               </div>
               
               <button 
