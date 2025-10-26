@@ -89,7 +89,15 @@ class XunfeiSpeechRecognition {
    */
   async recognizeAudio(audioBlob) {
     try {
-      console.log('开始识别音频，大小:', audioBlob.size);
+      console.log('🎤 [科大讯飞API] 开始识别音频，大小:', audioBlob.size);
+      
+      // 检查API密钥
+      if (!this.appId || !this.apiSecret || !this.apiKey) {
+        console.error('❌ [科大讯飞API] API密钥未配置，无法使用科大讯飞服务');
+        throw new Error('API密钥未配置');
+      }
+      
+      console.log('✅ [科大讯飞API] API密钥已配置，使用科大讯飞语音识别服务');
       
       // 转换音频格式为PCM
       const pcmData = await this.convertToPCM(audioBlob);
@@ -98,7 +106,7 @@ class XunfeiSpeechRecognition {
       await this.sendAudioToAPI(pcmData);
       
     } catch (error) {
-      console.error('音频识别失败:', error);
+      console.error('❌ [科大讯飞API] 音频识别失败:', error);
       if (this.onError) {
         this.onError(error);
       }
@@ -214,7 +222,7 @@ class XunfeiSpeechRecognition {
         };
 
         ws.onopen = () => {
-          console.log('WebSocket连接已建立');
+          console.log('🔗 [科大讯飞API] WebSocket连接已建立');
           
           // 发送开始帧
           const startFrame = {
@@ -236,7 +244,7 @@ class XunfeiSpeechRecognition {
             }
           };
           
-          console.log('发送开始帧:', JSON.stringify(startFrame, null, 2));
+          console.log('📤 [科大讯飞API] 发送开始帧:', JSON.stringify(startFrame, null, 2));
           
           ws.send(JSON.stringify(startFrame));
           
@@ -249,11 +257,11 @@ class XunfeiSpeechRecognition {
 
         ws.onmessage = (event) => {
           const response = JSON.parse(event.data);
-          console.log('收到响应:', response);
+          console.log('📥 [科大讯飞API] 收到响应:', response);
           
           // 检查API错误 - v2版本直接使用code字段
           if (response.code !== 0) {
-            console.error('API错误详情:');
+            console.error('❌ [科大讯飞API] API错误详情:');
             console.error('错误代码:', response.code);
             console.error('错误消息:', response.message);
             console.error('完整响应:', response);
@@ -264,7 +272,7 @@ class XunfeiSpeechRecognition {
           // 处理识别结果 - v2版本使用data字段
           if (response.data && response.data.result) {
             const result = response.data.result;
-            console.log('收到识别数据:', result);
+            console.log('🎯 [科大讯飞API] 收到识别数据:', result);
             
             if (result.ws) {
               let text = '';
@@ -276,14 +284,14 @@ class XunfeiSpeechRecognition {
               
               if (text) {
                 resultText += text;
-                console.log('当前识别结果:', text);
-                console.log('累计识别结果:', resultText);
+                console.log('📝 [科大讯飞API] 当前识别结果:', text);
+                console.log('📄 [科大讯飞API] 累计识别结果:', resultText);
               }
             }
             
             // 检查是否是最终结果 - v2版本使用data.status
             if (response.data.status === 2) {
-              console.log('识别完成，最终结果:', resultText);
+              console.log('✅ [科大讯飞API] 识别完成，最终结果:', resultText);
               clearTimeoutIfExists();
               if (this.onResult) {
                 this.onResult(resultText);
@@ -292,11 +300,11 @@ class XunfeiSpeechRecognition {
             }
           } else {
             // 处理非识别数据的响应（如连接确认等）
-            console.log('收到非识别数据响应:', response);
+            console.log('ℹ️ [科大讯飞API] 收到非识别数据响应:', response);
             
             // 如果是连接成功的响应，继续等待识别结果
             if (response.code === 0 && response.message === 'success') {
-              console.log('连接成功，等待识别结果...');
+              console.log('✅ [科大讯飞API] 连接成功，等待识别结果...');
             }
           }
         };

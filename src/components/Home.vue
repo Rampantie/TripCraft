@@ -128,12 +128,13 @@ export default {
           this.isProcessing = false;
         },
         onError: (error) => {
-          console.error('语音识别错误:', error);
+          console.error('❌ [科大讯飞API] 语音识别错误:', error);
           this.errorMessage = error.message || '语音识别失败';
           this.isProcessing = false;
           
           // 如果是API路由错误，提示用户使用浏览器内置API
           if (error.message && error.message.includes('10404')) {
+            console.log('⚠️ [API切换] 科大讯飞API不可用，切换到浏览器原生API');
             this.errorMessage = '科大讯飞API暂时不可用，正在尝试使用浏览器内置语音识别...';
             setTimeout(() => {
               this.useBrowserSpeechAPI();
@@ -236,6 +237,7 @@ export default {
     },
     
     useBrowserSpeechAPI() {
+      console.log('🌐 [浏览器原生API] 使用浏览器原生语音识别API作为备用方案');
       // 使用浏览器内置的Web Speech API作为备用方案
       if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
         this.errorMessage = '浏览器不支持语音识别功能';
@@ -250,26 +252,26 @@ export default {
       recognition.interimResults = false;
 
       recognition.onstart = () => {
-        console.log('浏览器语音识别开始');
+        console.log('🎤 [浏览器原生API] 开始语音识别');
         this.isRecording = true;
         this.errorMessage = '';
       };
 
       recognition.onresult = (event) => {
         const result = event.results[0][0].transcript;
-        console.log('浏览器识别结果:', result);
+        console.log('✅ [浏览器原生API] 识别结果:', result);
         this.userInput = result;
         this.isRecording = false;
       };
 
       recognition.onerror = (event) => {
-        console.error('浏览器语音识别错误:', event.error);
+        console.error('❌ [浏览器原生API] 语音识别错误:', event.error);
         this.errorMessage = '语音识别失败: ' + event.error;
         this.isRecording = false;
       };
 
       recognition.onend = () => {
-        console.log('浏览器语音识别结束');
+        console.log('🔚 [浏览器原生API] 语音识别结束');
         this.isRecording = false;
       };
 
