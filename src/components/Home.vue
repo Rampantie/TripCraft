@@ -53,7 +53,27 @@
               <div class="voice-wave"></div>
               <div class="voice-wave"></div>
             </div>
-            <span class="voice-text">正在听取您的语音...</span>
+            <span class="voice-text">正在录制语音...</span>
+          </div>
+          
+          <!-- 识别状态显示 -->
+          <div v-if="isProcessing" class="processing-status">
+            <div class="processing-animation">
+              <div class="processing-dot"></div>
+              <div class="processing-dot"></div>
+              <div class="processing-dot"></div>
+            </div>
+            <span class="processing-text">正在识别语音...</span>
+          </div>
+          
+          <!-- 错误信息显示 -->
+          <div v-if="errorMessage" class="error-message">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+              <line x1="15" y1="9" x2="9" y2="15" stroke="currentColor" stroke-width="2"/>
+              <line x1="9" y1="9" x2="15" y2="15" stroke="currentColor" stroke-width="2"/>
+            </svg>
+            <span>{{ errorMessage }}</span>
           </div>
         </div>
       </div>
@@ -63,6 +83,7 @@
 
 <script>
 import Navbar from './Navbar.vue';
+import xunfeiSpeech from '../utils/xunfeiSpeech.js';
 
 export default {
   name: 'Home',
@@ -73,62 +94,188 @@ export default {
     return {
       userInput: '',
       isRecording: false,
-      isVoiceSupported: false,
-      recognition: null
+      isProcessing: false, // 是否正在处理语音识别
+      errorMessage: '', // 错误信息
+      audioChunks: [], // 存储录音数据
+      isVoiceSupported: true // 语音功能支持状态
     }
   },
   mounted() {
     // 延迟初始化语音识别，避免阻塞渲染
     this.$nextTick(() => {
       setTimeout(() => {
-        this.initVoiceRecognition();
+        this.checkVoiceSupport();
+        this.initXunfeiSpeech();
       }, 100);
     });
   },
   methods: {
-    initVoiceRecognition() {
-      // 检查浏览器是否支持语音识别
-      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+    checkVoiceSupport() {
+      // 检查浏览器是否支持录音功能
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        this.isVoiceSupported = false;
+        console.warn('浏览器不支持录音功能');
+      } else {
         this.isVoiceSupported = true;
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        this.recognition = new SpeechRecognition();
-        
-        this.recognition.continuous = false;
-        this.recognition.interimResults = false;
-        this.recognition.lang = 'zh-CN';
-        
-        this.recognition.onstart = () => {
-          this.isRecording = true;
-        };
-        
-        this.recognition.onresult = (event) => {
-          const transcript = event.results[0][0].transcript;
-          this.userInput = transcript;
-          this.isRecording = false;
-        };
-        
-        this.recognition.onerror = (event) => {
-          console.error('语音识别错误:', event.error);
-          this.isRecording = false;
-        };
-        
-        this.recognition.onend = () => {
-          this.isRecording = false;
-        };
       }
     },
-    toggleVoiceInput() {
+    initXunfeiSpeech() {
+      // 初始化科大讯飞语音识别回调
+      xunfeiSpeech.setCallbacks({
+        onResult: (text) => {
+          console.log('识别结果:', text);
+          this.userInput = text;
+          this.isProcessing = false;
+        },
+        onError: (error) => {
+          console.error('语音识别错误:', error);
+          this.errorMessage = error.message || '语音识别失败';
+          this.isProcessing = false;
+          
+          // 如果是API路由错误，提示用户使用浏览器内置API
+          if (error.message && error.message.includes('10404')) {
+            this.errorMessage = '科大讯飞API暂时不可用，正在尝试使用浏览器内置语音识别...';
+            setTimeout(() => {
+              this.useBrowserSpeechAPI();
+            }, 1000);
+          }
+        }
+      });
+    },
+    async toggleVoiceInput() {
+      // 检查浏览器支持
       if (!this.isVoiceSupported) {
-        alert('您的浏览器不支持语音识别功能');
+        this.errorMessage = '您的浏览器不支持录音功能，请使用Chrome、Edge等现代浏览器';
         return;
       }
-      
+
       if (this.isRecording) {
-        this.recognition.stop();
+        // 停止录音
+        this.stopRecording();
       } else {
-        this.recognition.start();
+        // 开始录音
+        await this.startRecording();
       }
     },
+    
+    async startRecording() {
+      try {
+        // 检查浏览器支持
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('浏览器不支持录音功能');
+        }
+
+        // 获取麦克风权限
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            sampleSize: 16
+          } 
+        });
+
+        // 创建MediaRecorder
+        this.mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'audio/webm;codecs=opus'
+        });
+
+        this.audioChunks = [];
+        this.isRecording = true;
+        this.errorMessage = '';
+
+        // 收集音频数据
+        this.mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            this.audioChunks.push(event.data);
+          }
+        };
+
+        // 录音结束后处理
+        this.mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(track => track.stop());
+          this.isRecording = false;
+          
+          if (this.audioChunks.length > 0) {
+            this.isProcessing = true;
+            await this.processAudio();
+          }
+        };
+
+        // 开始录音
+        this.mediaRecorder.start();
+        console.log('开始录音');
+
+      } catch (error) {
+        console.error('开始录音失败:', error);
+        this.errorMessage = error.message || '无法启动录音功能';
+        this.isRecording = false;
+      }
+    },
+    
+    stopRecording() {
+      if (this.mediaRecorder && this.isRecording) {
+        this.mediaRecorder.stop();
+        console.log('停止录音');
+      }
+    },
+    
+    async processAudio() {
+      try {
+        // 合并音频数据
+        const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm;codecs=opus' });
+        console.log('音频大小:', audioBlob.size, 'bytes');
+        
+        // 发送到科大讯飞API进行识别
+        await xunfeiSpeech.recognizeAudio(audioBlob);
+        
+      } catch (error) {
+        console.error('处理音频失败:', error);
+        this.errorMessage = error.message || '音频处理失败';
+        this.isProcessing = false;
+      }
+    },
+    
+    useBrowserSpeechAPI() {
+      // 使用浏览器内置的Web Speech API作为备用方案
+      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+        this.errorMessage = '浏览器不支持语音识别功能';
+        return;
+      }
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+      
+      recognition.lang = 'zh-CN';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => {
+        console.log('浏览器语音识别开始');
+        this.isRecording = true;
+        this.errorMessage = '';
+      };
+
+      recognition.onresult = (event) => {
+        const result = event.results[0][0].transcript;
+        console.log('浏览器识别结果:', result);
+        this.userInput = result;
+        this.isRecording = false;
+      };
+
+      recognition.onerror = (event) => {
+        console.error('浏览器语音识别错误:', event.error);
+        this.errorMessage = '语音识别失败: ' + event.error;
+        this.isRecording = false;
+      };
+
+      recognition.onend = () => {
+        console.log('浏览器语音识别结束');
+        this.isRecording = false;
+      };
+
+      recognition.start();
+    },
+    
     handleSubmit() {
       if (this.userInput.trim()) {
         console.log('用户输入:', this.userInput);
@@ -316,6 +463,72 @@ export default {
 .voice-text {
   font-size: 14px;
   color: #667eea;
+  font-weight: 500;
+}
+
+/* 处理状态显示 */
+.processing-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: rgba(59, 130, 246, 0.1);
+  border-radius: 12px;
+  border-left: 4px solid #3b82f6;
+}
+
+.processing-animation {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.processing-dot {
+  width: 8px;
+  height: 8px;
+  background: #3b82f6;
+  border-radius: 50%;
+  animation: processing 1.4s infinite ease-in-out;
+}
+
+.processing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.processing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes processing {
+  0%, 80%, 100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+.processing-text {
+  font-size: 14px;
+  color: #3b82f6;
+  font-weight: 500;
+}
+
+/* 错误信息样式 */
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 12px;
+  border-left: 4px solid #ef4444;
+  color: #ef4444;
+  font-size: 14px;
   font-weight: 500;
 }
 
