@@ -2,6 +2,11 @@
 echo 🚀 启动 TripCraft 开发环境
 echo.
 
+:: 切换到脚本所在目录
+cd /d "%~dp0"
+echo 📁 当前目录: %CD%
+
+echo.
 echo 📦 安装后端依赖...
 cd backend
 call npm install
@@ -13,7 +18,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo 🔧 启动后端服务器...
-start "TripCraft Backend" cmd /k "cd backend && start.bat"
+start "TripCraft Backend" cmd /k ".\start.bat"
 
 echo.
 echo ⏳ 等待后端服务器启动...
