@@ -113,8 +113,9 @@ app.post('/api/generate-trip-plan', async (req, res) => {
   try {
     console.log('🚀 [后端代理] 收到旅行计划生成请求');
     console.log('📝 [后端代理] 用户需求:', req.body.userRequest);
+    console.log('👤 [后端代理] 用户偏好:', req.body.userPreferences);
 
-    const { userRequest } = req.body;
+    const { userRequest, userPreferences } = req.body;
     
     if (!userRequest || !userRequest.trim()) {
       return res.status(400).json({ 
@@ -133,9 +134,9 @@ app.post('/api/generate-trip-plan', async (req, res) => {
       });
     }
 
-    // 构建提示词
-    const prompt = buildPrompt(userRequest);
-    console.log('📋 [后端代理] 构建的提示词长度:', prompt.length);
+    // 构建个性化提示词
+    const prompt = buildPersonalizedPrompt(userRequest, userPreferences);
+    console.log('📋 [后端代理] 构建的个性化提示词长度:', prompt.length);
 
     // 调用阿里云百炼API（同步调用）
     const controller = new AbortController();
@@ -259,9 +260,53 @@ app.post('/api/generate-trip-plan', async (req, res) => {
     }
 });
 
-// 构建提示词
-function buildPrompt(userRequest) {
-  return `请根据以下用户需求生成一份详细的旅行计划，要求：
+// 构建个性化提示词
+function buildPersonalizedPrompt(userRequest, userPreferences) {
+  // 解析用户偏好
+  const preferences = userPreferences || {
+    attractionType: 'mixed',
+    travelPace: 'moderate',
+    accommodation: 'comfortable',
+    transportation: 'mixed'
+  };
+
+  // 偏好描述映射
+  const preferenceDescriptions = {
+    attractionType: {
+      'cultural': '人文景点（博物馆、历史建筑、文化遗址、艺术展览等）',
+      'natural': '自然景点（山川、湖泊、海滩、公园、自然保护区等）',
+      'mixed': '混合类型（人文与自然景点相结合）'
+    },
+    travelPace: {
+      'relaxed': '轻松休闲（每天安排较少活动，有充足休息时间）',
+      'moderate': '适中节奏（每天安排适量活动，平衡游览与休息）',
+      'intensive': '紧凑忙碌（每天安排较多活动，充分利用时间）'
+    },
+    accommodation: {
+      'budget': '经济型住宿（青旅、经济酒店等，注重性价比）',
+      'comfortable': '舒适型住宿（中档酒店、民宿等，注重舒适度）',
+      'luxury': '豪华型住宿（五星级酒店、度假村等，注重品质体验）'
+    },
+    transportation: {
+      'public': '公共交通（地铁、公交、火车等，经济环保）',
+      'private': '私人交通（出租车、网约车、包车等，便捷舒适）',
+      'mixed': '混合方式（根据情况选择最合适的交通方式）'
+    }
+  };
+
+  // 构建个性化描述
+  const personalizedDescription = `
+用户旅行偏好设置：
+- 景点类型偏好：${preferenceDescriptions.attractionType[preferences.attractionType]}
+- 旅行节奏：${preferenceDescriptions.travelPace[preferences.travelPace]}
+- 住宿偏好：${preferenceDescriptions.accommodation[preferences.accommodation]}
+- 交通偏好：${preferenceDescriptions.transportation[preferences.transportation]}
+
+请根据以上偏好设置，为用户生成个性化的旅行计划。`;
+
+  return `请根据以下用户需求和偏好设置生成一份详细的个性化旅行计划：
+
+${personalizedDescription}
 
 1. 旅行计划格式为JSON格式，包含以下结构：
 {
@@ -294,18 +339,45 @@ function buildPrompt(userRequest) {
   }
 }
 
-2. 要求：
-- 每天安排3-5个活动
+2. 个性化要求：
+- 景点选择要符合用户的景点类型偏好
+- 行程安排要符合用户的旅行节奏偏好
+- 住宿推荐要符合用户的住宿偏好
+- 交通方式要符合用户的交通偏好
+- 每天安排3-5个活动（根据旅行节奏调整）
 - 每个活动包含时间、地点、简短描述、花费
 - 时间安排要合理，考虑交通时间
-- 花费要符合预算范围
 - 活动要符合目的地特色
+
+3. 费用计算要求（重要）：
+- 每个活动的cost字段必须反映实际花费
+- 住宿费用要根据住宿偏好和目的地实际情况计算：
+  * 经济型：青旅床位50-150元/晚，经济酒店200-400元/晚
+  * 舒适型：中档酒店400-800元/晚，精品民宿600-1200元/晚
+  * 豪华型：五星级酒店800-2000元/晚，度假村1000-3000元/晚
+- 交通费用要根据交通偏好计算：
+  * 公共交通：地铁5-20元/次，公交2-10元/次，火车50-500元/次
+  * 私人交通：出租车50-200元/次，网约车30-150元/次，包车300-800元/天
+  * 混合方式：根据距离和便利性选择最合适的交通方式
+- 餐饮费用要根据目的地消费水平：
+  * 经济型：快餐30-60元/餐，小餐馆50-100元/餐
+  * 舒适型：中档餐厅100-200元/餐，特色餐厅150-300元/餐
+  * 豪华型：高档餐厅300-800元/餐，米其林餐厅500-1500元/餐
+- 门票费用要根据景点类型：
+  * 人文景点：博物馆20-100元，历史建筑30-150元，艺术展览50-200元
+  * 自然景点：公园10-50元，自然保护区50-200元，主题公园200-500元
+- costBreakdown中的各项费用必须与itinerary中所有活动的cost总和相匹配
+- 总花费不能超过用户预算，但应该接近预算的80-95%
+
+4. 返回要求：
 - 返回纯JSON格式，不要包含其他文字
+- 确保所有数字字段都是数字类型，不是字符串
 
 用户需求：${userRequest}
 
-请生成旅行计划：`;
+请生成个性化旅行计划：`;
 }
+
 
 // 解析旅行计划
 function parseTripPlan(text) {
@@ -316,8 +388,7 @@ function parseTripPlan(text) {
     // 尝试提取JSON部分
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.log('⚠️ [后端代理] 未找到JSON格式，尝试智能解析');
-      return parseFromText(text);
+      throw new Error('未找到JSON格式的旅行计划');
     }
 
     const jsonStr = jsonMatch[0];
@@ -327,8 +398,7 @@ function parseTripPlan(text) {
 
     // 验证必要字段
     if (!tripPlan.tripDetails || !tripPlan.itinerary || !tripPlan.costBreakdown) {
-      console.log('⚠️ [后端代理] JSON格式不完整，尝试智能解析');
-      return parseFromText(text);
+      throw new Error('旅行计划JSON格式不完整');
     }
 
     // 确保日期格式正确
@@ -348,153 +418,11 @@ function parseTripPlan(text) {
     console.error('❌ [后端代理] 解析旅行计划失败:', error);
     console.log('🔄 [后端代理] 尝试智能解析');
     
-    // 尝试智能解析
-    try {
-      return parseFromText(text);
-    } catch (parseError) {
-      console.error('❌ [后端代理] 智能解析也失败:', parseError);
-      return getDefaultTripPlan();
-    }
+    // 如果解析失败，抛出错误
+    throw new Error('无法解析旅行计划: ' + error.message);
   }
 }
 
-// 智能解析函数
-function parseFromText(text) {
-  console.log('🧠 [后端代理] 开始智能解析旅行计划');
-  
-  // 提取目的地
-  const destinationMatch = text.match(/(?:目的地|地点|去|到)[：:]?\s*([^，。\n]+)/);
-  const destination = destinationMatch ? destinationMatch[1].trim() : '目的地待定';
-  
-  // 提取天数
-  const durationMatch = text.match(/(\d+)[天日]/);
-  const duration = durationMatch ? parseInt(durationMatch[1]) : 3;
-  
-  // 提取预算
-  const budgetMatch = text.match(/(\d+)[万千]?元/);
-  let budget = 5000;
-  if (budgetMatch) {
-    const amount = parseInt(budgetMatch[1]);
-    budget = text.includes('万') ? amount * 10000 : amount;
-  }
-  
-  const today = new Date();
-  const startDate = new Date(today);
-  startDate.setDate(today.getDate() + 7);
-  
-  const tripPlan = {
-    tripDetails: {
-      destination: destination,
-      startDate: startDate.toISOString().split('T')[0],
-      duration: duration,
-      budget: budget
-    },
-    itinerary: [],
-    costBreakdown: {
-      accommodation: Math.floor(budget * 0.4),
-      transportation: Math.floor(budget * 0.3),
-      food: Math.floor(budget * 0.2),
-      tickets: Math.floor(budget * 0.08),
-      others: Math.floor(budget * 0.02)
-    }
-  };
-  
-  // 生成每日行程
-  for (let i = 0; i < duration; i++) {
-    const dayDate = new Date(startDate);
-    dayDate.setDate(startDate.getDate() + i);
-    
-    const dayPlan = {
-      date: dayDate.toISOString().split('T')[0],
-      activities: generateDayActivities(destination, i, duration)
-    };
-    
-    tripPlan.itinerary.push(dayPlan);
-  }
-  
-  console.log('✅ [后端代理] 智能解析完成');
-  return tripPlan;
-}
-
-// 生成每日活动
-function generateDayActivities(destination, dayIndex, totalDays) {
-  const activities = [];
-  
-  if (dayIndex === 0) {
-    activities.push(
-      { time: '09:00', title: '抵达目的地', description: '开始您的旅程', duration: '2小时', cost: 0 },
-      { time: '12:00', title: '酒店入住', description: '办理入住手续，休息调整', duration: '1小时', cost: 0 },
-      { time: '14:00', title: '城市探索', description: '熟悉周边环境，了解当地文化', duration: '3小时', cost: 200 },
-      { time: '18:00', title: '当地美食', description: '品尝特色美食，体验当地文化', duration: '2小时', cost: 300 }
-    );
-  } else if (dayIndex === totalDays - 1) {
-    activities.push(
-      { time: '09:00', title: '最后购物', description: '购买纪念品和特产', duration: '2小时', cost: 500 },
-      { time: '12:00', title: '退房准备', description: '整理行李，准备离开', duration: '1小时', cost: 0 },
-      { time: '15:00', title: '前往机场', description: '前往机场，准备返程', duration: '2小时', cost: 200 }
-    );
-  } else {
-    activities.push(
-      { time: '09:00', title: '著名景点游览', description: '参观当地著名景点', duration: '3小时', cost: 400 },
-      { time: '13:00', title: '当地餐厅', description: '品尝地道美食', duration: '1小时', cost: 200 },
-      { time: '15:00', title: '文化体验', description: '体验当地传统文化', duration: '2小时', cost: 300 },
-      { time: '18:00', title: '自由活动', description: '自由安排，享受休闲时光', duration: '2小时', cost: 150 }
-    );
-  }
-  
-  return activities;
-}
-
-// 获取默认旅行计划（备用方案）
-function getDefaultTripPlan() {
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-
-  return {
-    tripDetails: {
-      destination: '目的地待定',
-      startDate: tomorrow.toISOString().split('T')[0],
-      duration: 3,
-      budget: 5000
-    },
-    itinerary: [
-      {
-        date: tomorrow.toISOString().split('T')[0],
-        activities: [
-          {
-            time: '09:00',
-            title: '抵达目的地',
-            description: '开始您的旅程',
-            duration: '1小时',
-            cost: 0
-          },
-          {
-            time: '10:00',
-            title: '城市探索',
-            description: '了解当地文化',
-            duration: '3小时',
-            cost: 200
-          },
-          {
-            time: '14:00',
-            title: '当地美食',
-            description: '品尝特色美食',
-            duration: '1小时',
-            cost: 150
-          }
-        ]
-      }
-    ],
-    costBreakdown: {
-      accommodation: 1000,
-      transportation: 800,
-      food: 600,
-      tickets: 400,
-      others: 300
-    }
-  };
-}
 
 // 启动服务器
 app.listen(PORT, () => {

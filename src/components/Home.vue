@@ -85,11 +85,16 @@
 import Navbar from './Navbar.vue';
 import xunfeiSpeech from '../utils/xunfeiSpeech.js';
 import bailianAPI from '../utils/bailianAPI.js';
+import { useAuthStore } from '../stores/auth.js';
 
 export default {
   name: 'Home',
   components: {
     Navbar
+  },
+  setup() {
+    const authStore = useAuthStore();
+    return { authStore };
   },
   data() {
     return {
@@ -288,9 +293,13 @@ export default {
           this.isProcessing = true;
           this.errorMessage = '';
           
+          // 获取用户偏好设置
+          const userPreferences = this.getUserPreferences();
+          console.log('👤 [主页] 用户偏好设置:', userPreferences);
+          
           // 调用阿里云百炼API生成旅行计划
           console.log('🤖 [主页] 开始调用阿里云百炼API生成旅行计划...');
-          const tripPlan = await bailianAPI.generateTripPlan(this.userInput);
+          const tripPlan = await bailianAPI.generateTripPlan(this.userInput, userPreferences);
           
           console.log('✅ [主页] 旅行计划生成成功，准备跳转');
           
@@ -317,6 +326,25 @@ export default {
           this.isProcessing = false;
         }
       }
+    },
+    
+    getUserPreferences() {
+      // 获取用户偏好设置，如果用户未登录则返回默认值
+      if (!this.authStore.isAuthenticated || !this.authStore.userProfile) {
+        return {
+          attractionType: 'mixed',
+          travelPace: 'moderate',
+          accommodation: 'comfortable',
+          transportation: 'mixed'
+        };
+      }
+      
+      return this.authStore.userProfile.preferences || {
+        attractionType: 'mixed',
+        travelPace: 'moderate',
+        accommodation: 'comfortable',
+        transportation: 'mixed'
+      };
     },
     handleAvatarClick() {
       console.log('用户头像被点击');
