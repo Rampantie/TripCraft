@@ -12,7 +12,7 @@ if %errorlevel% neq 0 (
 
 echo.
 echo 🔧 设置环境变量...
-set BAILIAN_API_KEY=sk-4dd76a7ef7464c3c98f18339a7b31bf2
+set BAILIAN_API_KEY=%BAILIAN_API_KEY%
 set PORT=3001
 
 echo.
