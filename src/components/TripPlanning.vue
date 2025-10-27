@@ -318,14 +318,79 @@ export default {
     }
   },
   mounted() {
-    // 获取从主页传递的用户输入
-    if (this.$route.query.request) {
-      this.userRequest = this.$route.query.request;
-    } else {
-      this.userRequest = '我想去日本旅行7天，预算1万元，主要想体验日本的文化和美食';
-    }
+    // 获取从主页传递的用户输入和旅行计划
+    this.loadTripData();
   },
   methods: {
+    loadTripData() {
+      console.log('📋 [旅行计划页] 开始加载旅行数据');
+      
+      // 从sessionStorage获取用户输入
+      const userRequest = sessionStorage.getItem('userRequest');
+      if (userRequest) {
+        this.userRequest = userRequest;
+        console.log('📝 [旅行计划页] 用户需求:', userRequest);
+      } else {
+        this.userRequest = '我想去日本旅行7天，预算1万元，主要想体验日本的文化和美食';
+        console.log('⚠️ [旅行计划页] 未找到用户需求，使用默认值');
+      }
+      
+      // 从sessionStorage获取API生成的旅行计划
+      const tripPlanData = sessionStorage.getItem('tripPlan');
+      if (tripPlanData) {
+        try {
+          const tripPlan = JSON.parse(tripPlanData);
+          console.log('✅ [旅行计划页] 加载API生成的旅行计划:', tripPlan);
+          
+          // 更新组件数据
+          this.tripDetails = tripPlan.tripDetails || this.tripDetails;
+          this.itinerary = tripPlan.itinerary || this.itinerary;
+          this.costBreakdown = tripPlan.costBreakdown || this.costBreakdown;
+          
+          // 更新地图点（基于行程生成）
+          this.updateMapPoints();
+          
+          console.log('🎯 [旅行计划页] 旅行计划加载完成');
+          
+        } catch (error) {
+          console.error('❌ [旅行计划页] 解析旅行计划失败:', error);
+          console.log('⚠️ [旅行计划页] 使用默认旅行计划');
+        }
+      } else {
+        console.log('⚠️ [旅行计划页] 未找到旅行计划数据，使用默认计划');
+      }
+    },
+    
+    updateMapPoints() {
+      // 基于行程生成地图点
+      const points = [];
+      let pointIndex = 0;
+      
+      this.itinerary.forEach((day, dayIndex) => {
+        day.activities.forEach((activity, activityIndex) => {
+          if (activity.title && !points.find(p => p.name === activity.title)) {
+            points.push({
+              name: activity.title,
+              x: 20 + (pointIndex % 5) * 15,
+              y: 20 + Math.floor(pointIndex / 5) * 15,
+              color: this.getPointColor(activityIndex),
+              day: dayIndex,
+              activity: activityIndex
+            });
+            pointIndex++;
+          }
+        });
+      });
+      
+      this.mapPoints = points;
+      console.log('🗺️ [旅行计划页] 地图点已更新:', points);
+    },
+    
+    getPointColor(activityIndex) {
+      const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+      return colors[activityIndex % colors.length];
+    },
+    
     selectDay(dayIndex) {
       this.selectedDay = dayIndex;
     },

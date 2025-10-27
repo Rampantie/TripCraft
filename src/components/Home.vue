@@ -40,7 +40,7 @@
             <button 
               class="submit-btn"
               @click="handleSubmit"
-              :disabled="!userInput.trim()"
+              :disabled="!userInput.trim() || isProcessing"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M2.01 21L23 12L2.01 3L2 10L17 12L2 14L2.01 21Z" fill="currentColor"/>
@@ -63,7 +63,7 @@
               <div class="processing-dot"></div>
               <div class="processing-dot"></div>
             </div>
-            <span class="processing-text">正在识别语音...</span>
+            <span class="processing-text">{{ isRecording ? '正在识别语音...' : '正在生成旅行计划...' }}</span>
           </div>
           
           <!-- 错误信息显示 -->
@@ -84,6 +84,7 @@
 <script>
 import Navbar from './Navbar.vue';
 import xunfeiSpeech from '../utils/xunfeiSpeech.js';
+import bailianAPI from '../utils/bailianAPI.js';
 
 export default {
   name: 'Home',
@@ -278,14 +279,43 @@ export default {
       recognition.start();
     },
     
-    handleSubmit() {
+    async handleSubmit() {
       if (this.userInput.trim()) {
-        console.log('用户输入:', this.userInput);
-        // 跳转到旅行规划页面，并传递用户输入
-        this.$router.push({
-          path: '/planning',
-          query: { request: this.userInput }
-        });
+        console.log('🚀 [主页] 用户提交需求:', this.userInput);
+        
+        try {
+          // 显示加载状态
+          this.isProcessing = true;
+          this.errorMessage = '';
+          
+          // 调用阿里云百炼API生成旅行计划
+          console.log('🤖 [主页] 开始调用阿里云百炼API生成旅行计划...');
+          const tripPlan = await bailianAPI.generateTripPlan(this.userInput);
+          
+          console.log('✅ [主页] 旅行计划生成成功，准备跳转');
+          
+          // 将旅行计划数据存储到sessionStorage，然后跳转
+          sessionStorage.setItem('tripPlan', JSON.stringify(tripPlan));
+          sessionStorage.setItem('userRequest', this.userInput);
+          
+          this.$router.push({
+            path: '/planning'
+          });
+          
+        } catch (error) {
+          console.error('❌ [主页] 生成旅行计划失败:', error);
+          
+          let errorMessage = '生成旅行计划失败: ' + (error.message || '未知错误');
+          
+          // 如果是403错误，显示更详细的帮助信息
+          if (error.message && error.message.includes('403')) {
+            errorMessage = 'API访问被拒绝，请检查API Key配置。点击查看详细帮助。';
+          }
+          
+          this.errorMessage = errorMessage;
+        } finally {
+          this.isProcessing = false;
+        }
       }
     },
     handleAvatarClick() {
