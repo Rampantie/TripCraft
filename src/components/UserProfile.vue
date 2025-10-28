@@ -207,12 +207,6 @@
         <div class="travel-plans-card">
           <div class="card-header">
             <h3 class="card-title">我的旅行计划</h3>
-            <button class="add-plan-btn" @click="addNewPlan">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-              新建计划
-            </button>
           </div>
           <div class="plans-list">
             <div 
@@ -251,35 +245,22 @@
         <!-- 花费统计 -->
         <div class="spending-card">
           <h3 class="card-title">花费统计</h3>
-          <div class="spending-stats">
-            <div class="spending-item">
-              <div class="spending-label">总花费</div>
-              <div class="spending-amount">¥{{ (totalSpending || 0).toLocaleString() }}</div>
-            </div>
-            <div class="spending-item">
-              <div class="spending-label">平均每次</div>
-              <div class="spending-amount">¥{{ (averageSpending || 0).toLocaleString() }}</div>
-            </div>
-            <div class="spending-item">
-              <div class="spending-label">本月花费</div>
-              <div class="spending-amount">¥{{ (monthlySpending || 0).toLocaleString() }}</div>
-            </div>
+        <div class="spending-stats">
+          <div class="spending-item">
+            <div class="spending-label">总花费</div>
+            <div class="spending-amount">¥{{ (totalSpending || 0).toLocaleString() }}</div>
           </div>
-          <div class="spending-chart">
-            <div class="chart-placeholder">
-              <svg width="100" height="60" viewBox="0 0 100 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M10 50L25 35L40 20L55 30L70 15L85 25L90 10" stroke="#667eea" stroke-width="2" fill="none"/>
-                <circle cx="10" cy="50" r="3" fill="#667eea"/>
-                <circle cx="25" cy="35" r="3" fill="#667eea"/>
-                <circle cx="40" cy="20" r="3" fill="#667eea"/>
-                <circle cx="55" cy="30" r="3" fill="#667eea"/>
-                <circle cx="70" cy="15" r="3" fill="#667eea"/>
-                <circle cx="85" cy="25" r="3" fill="#667eea"/>
-                <circle cx="90" cy="10" r="3" fill="#667eea"/>
-              </svg>
-              <p>花费趋势图</p>
-            </div>
+          <div class="spending-item">
+            <div class="spending-label">平均每次</div>
+            <div class="spending-amount">¥{{ (averageSpending || 0).toLocaleString() }}</div>
           </div>
+        </div>
+        <div class="spending-chart">
+          <div v-if="completedSpendingList.length === 0" class="chart-placeholder">
+            <p>暂无已完成计划，完成后将展示各计划实际花费占比</p>
+          </div>
+          <div v-else ref="spendingPieEchart" class="echart-pie"></div>
+        </div>
         </div>
         
         
@@ -314,6 +295,7 @@ import AvatarSelector from './AvatarSelector.vue';
 import Modal from './Modal.vue';
 import { useAuthStore } from '../stores/auth.js';
 import supabase from '../utils/supabase.js';
+import * as echarts from 'echarts';
 
 export default {
   name: 'UserProfile',
@@ -342,7 +324,8 @@ export default {
       travelPlansList: [],
       travelPlansCountInternal: 0,
       showDeleteModal: false,
-      deletePlanId: null
+      deletePlanId: null,
+      echartInstance: null
     }
   },
   computed: {
@@ -370,9 +353,16 @@ export default {
     averageSpending() {
       return this.completedTrips > 0 ? Math.round(this.totalSpending / this.completedTrips) : 0;
     },
-    monthlySpending() {
-      // 模拟本月花费
-      return 5000;
+    completedSpendingList() {
+      const completed = (this.travelPlansList || []).filter(p => p.status === 'completed');
+      const colorPalette = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#8b5cf6', '#14b8a6', '#f97316'];
+      const values = completed.map(p => ({ id: p.id, title: p.title || p.destination || '计划', value: Number(p.actualSpending || 0) }));
+      const total = values.reduce((s, x) => s + x.value, 0) || 0;
+      return values.map((x, i) => ({
+        ...x,
+        color: colorPalette[i % colorPalette.length],
+        percent: total > 0 ? Math.round((x.value / total) * 100) : 0
+      }));
     }
   },
   async mounted() {
@@ -386,6 +376,29 @@ export default {
     await this.loadUserData();
     await this.loadTravelPlans();
     this.isLoading = false;
+    this.$nextTick(() => this.initEcharts());
+  },
+  watch: {
+    completedSpendingList: {
+      handler() {
+        // 当完成计划数据变化时，确保容器已渲染并更新图表
+        this.$nextTick(() => {
+          if (!this.echartInstance && this.$refs.spendingPieEchart) {
+            this.initEcharts();
+          } else {
+            this.updateEcharts();
+          }
+        });
+      },
+      deep: true
+    }
+  },
+  beforeUnmount() {
+    if (this.echartInstance) {
+      this.echartInstance.dispose();
+      this.echartInstance = null;
+    }
+    window.removeEventListener('resize', this.handleResize);
   },
   methods: {
     async loadUserData() {
@@ -417,7 +430,7 @@ export default {
         if (!this.authStore.user?.id) return;
         const { data, error } = await supabase
           .from('travel_plans')
-          .select('id, title, destination, start_date, end_date, duration, budget, status')
+          .select('id, title, destination, start_date, end_date, duration, budget, status, actual_spending')
           .eq('user_id', this.authStore.user.id)
           .order('created_at', { ascending: false });
 
@@ -431,13 +444,89 @@ export default {
           endDate: p.end_date,
           duration: p.duration,
           budget: p.budget,
-          status: p.status || 'planning'
+          status: p.status || 'planning',
+          actualSpending: Number(p.actual_spending || 0)
         }));
 
         this.travelPlansCountInternal = this.travelPlansList.length;
+        this.$nextTick(() => this.updateEcharts());
       } catch (e) {
         console.error('加载旅行计划失败:', e);
       }
+    },
+    async initEcharts() {
+      try {
+        const el = this.$refs.spendingPieEchart;
+        if (!el) return;
+        if (this.echartInstance) {
+          this.echartInstance.dispose();
+        }
+        this.echartInstance = echarts.init(el);
+        this.updateEcharts();
+        window.addEventListener('resize', this.handleResize);
+      } catch (e) {
+        console.error('ECharts 初始化失败:', e);
+      }
+    },
+    handleResize() {
+      if (this.echartInstance) {
+        this.echartInstance.resize();
+      }
+    },
+    updateEcharts() {
+      // 若实例不存在但容器已存在，尝试初始化
+      if (!this.echartInstance && this.$refs.spendingPieEchart) {
+        try {
+          this.echartInstance = echarts.init(this.$refs.spendingPieEchart);
+        } catch (e) {
+          return;
+        }
+      }
+      if (!this.echartInstance) return;
+      const data = this.completedSpendingList.filter(i => i.value > 0).map(i => ({
+        value: i.value,
+        name: i.title,
+        itemStyle: { color: i.color },
+        raw: i
+      }));
+      const total = data.reduce((s, d) => s + d.value, 0);
+      const option = {
+        tooltip: {
+          trigger: 'item',
+          formatter: (params) => {
+            const r = params.data.raw;
+            const dest = r.title;
+            const spend = r.value;
+            return `${dest}<br/>实际花费：¥${spend.toLocaleString()} (${params.percent}%)`;
+          }
+        },
+        legend: { show: false },
+        series: [
+          {
+            type: 'pie',
+            radius: ['45%', '70%'],
+            avoidLabelOverlap: true,
+            label: { show: true, formatter: '{b}' },
+            data
+          }
+        ],
+        graphic: total > 0 ? [
+          {
+            type: 'text',
+            left: 'center',
+            top: 'middle',
+            style: {
+              text: `合计\n¥${total.toLocaleString()}`,
+              textAlign: 'center',
+              fill: '#333',
+              fontWeight: 'bold',
+              fontSize: 14
+            }
+          }
+        ] : []
+      };
+      this.echartInstance.setOption(option);
+      this.echartInstance.resize();
     },
     
     handleAvatarClick() {
@@ -1075,6 +1164,11 @@ export default {
   align-items: center;
   gap: 12px;
   color: #666;
+}
+
+.echart-pie {
+  width: 100%;
+  height: 260px;
 }
 
 /* 响应式设计 */
