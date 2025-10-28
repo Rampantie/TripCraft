@@ -262,6 +262,13 @@ app.post('/api/generate-trip-plan', async (req, res) => {
 
 // 构建个性化提示词
 function buildPersonalizedPrompt(userRequest, userPreferences) {
+  // 获取当前日期
+  const currentDate = new Date();
+  const currentDateStr = currentDate.toISOString().split('T')[0];
+  const tomorrowDate = new Date(currentDate);
+  tomorrowDate.setDate(currentDate.getDate() + 1);
+  const tomorrowDateStr = tomorrowDate.toISOString().split('T')[0];
+  
   // 解析用户偏好
   const preferences = userPreferences || {
     attractionType: 'mixed',
@@ -308,11 +315,13 @@ function buildPersonalizedPrompt(userRequest, userPreferences) {
 
 ${personalizedDescription}
 
+重要提醒：当前日期是 ${currentDateStr}，请确保生成的出发日期是未来日期（建议从 ${tomorrowDateStr} 开始）。
+
 1. 旅行计划格式为JSON格式，包含以下结构：
 {
   "tripDetails": {
     "destination": "目的地",
-    "startDate": "出发日期(YYYY-MM-DD格式)",
+    "startDate": "出发日期(YYYY-MM-DD格式，必须是未来日期)",
     "duration": 天数(数字),
     "budget": 预算(数字)
   },
@@ -369,7 +378,13 @@ ${personalizedDescription}
 - costBreakdown中的各项费用必须与itinerary中所有活动的cost总和相匹配
 - 总花费不能超过用户预算，但应该接近预算的80-95%
 
-4. 返回要求：
+4. 日期要求（重要）：
+- 出发日期必须是未来日期，不能是今天或过去的日期
+- 当前日期：${currentDateStr}
+- 建议出发日期：${tomorrowDateStr} 或之后
+- 行程中的每一天的日期都要基于出发日期正确计算
+
+5. 返回要求：
 - 返回纯JSON格式，不要包含其他文字
 - 确保所有数字字段都是数字类型，不是字符串
 
