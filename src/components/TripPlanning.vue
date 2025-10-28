@@ -80,6 +80,16 @@
                   <button class="map-btn" @click="toggleMapView">
                     {{ mapView === 'route' ? '景点模式' : '路线模式' }}
                   </button>
+        <button 
+          v-if="planId && isReadOnly && planStatus !== 'completed'"
+          class="btn-primary"
+          @click="openCompleteModal"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          完成旅行
+        </button>
                 </div>
               </div>
               <div class="map-content">
@@ -155,6 +165,10 @@
                   <span class="total-label">总费用</span>
                   <span class="total-amount">¥{{ totalCost.toLocaleString() }}</span>
                 </div>
+                <div class="cost-total">
+                  <span class="total-label">实际费用</span>
+                  <span class="total-amount">¥{{ actualSpending.toLocaleString() }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -183,20 +197,68 @@
         </div>
       </div>
     </main>
+
+    <!-- 消息提示弹窗 -->
+    <Modal
+      :show="showMessageModal"
+      :title="messageType === 'success' ? '成功' : messageType === 'danger' ? '错误' : '提示'"
+      :message="messageText"
+      :confirm-type="messageType"
+      confirm-text="确定"
+      :show-cancel="false"
+      :show-close="false"
+      @confirm="handleMessageClose"
+    />
+
+    <!-- 完成旅行弹窗：输入实际花费 -->
+    <Modal
+      :show="showCompleteModal"
+      title="完成旅行"
+      confirm-text="保存"
+      cancel-text="取消"
+      confirm-type="success"
+      @confirm="confirmComplete"
+      @cancel="() => showCompleteModal = false"
+      @close="() => showCompleteModal = false"
+    >
+      <div class="complete-form">
+        <label class="complete-label">请输入实际总花费（元）</label>
+        <input 
+          v-model="completeAmount"
+          type="number"
+          min="0"
+          class="complete-input"
+          placeholder="例如：9800"
+        />
+        <p class="complete-tip">保存后该计划将标记为“已完成”。</p>
+      </div>
+    </Modal>
   </div>
 </template>
 
 <script>
 import Navbar from './Navbar.vue';
+import Modal from './Modal.vue';
+import supabase from '../utils/supabase.js';
 
 export default {
   name: 'TripPlanning',
   components: {
-    Navbar
+    Navbar,
+    Modal
   },
   data() {
     return {
+      isReadOnly: false,
+      planId: null,
       userRequest: '',
+      showMessageModal: false,
+      messageText: '',
+      messageType: 'info',
+      planStatus: 'planning',
+      actualSpending: 0,
+      showCompleteModal: false,
+      completeAmount: '',
       selectedDay: 0,
       mapView: 'route',
       tripDetails: {
@@ -318,10 +380,92 @@ export default {
     }
   },
   mounted() {
-    // 获取从主页传递的用户输入和旅行计划
-    this.loadTripData();
+    // 路由参数：计划ID与只读标记
+    this.planId = this.$route?.params?.id || null;
+    this.isReadOnly = this.$route?.query?.readonly === '1';
+
+    if (this.planId) {
+      // 查看已保存计划（只读）
+      this.loadPlanById(this.planId);
+    } else {
+      // 新建流程：从 sessionStorage 加载
+      this.loadTripData();
+    }
   },
   methods: {
+    async loadPlanById(id) {
+      try {
+        console.log('🔎 [旅行计划页] 加载已保存计划 ID:', id);
+        const { data, error } = await supabase
+          .from('travel_plans')
+          .select('title, destination, start_date, end_date, duration, budget, status, actual_spending, itinerary, cost_breakdown')
+          .eq('id', id)
+          .single();
+
+        if (error) throw error;
+
+        // 将数据库数据映射到界面
+        this.userRequest = data.title || '';
+        this.tripDetails = {
+          destination: data.destination || '',
+          startDate: data.start_date || '',
+          duration: data.duration || 1,
+          budget: Number(data.budget) || 0
+        };
+        this.itinerary = Array.isArray(data.itinerary) ? data.itinerary : [];
+        if (data.cost_breakdown && typeof data.cost_breakdown === 'object') {
+          this.costBreakdown = {
+            accommodation: Number(data.cost_breakdown.accommodation) || 0,
+            transportation: Number(data.cost_breakdown.transportation) || 0,
+            food: Number(data.cost_breakdown.food) || 0,
+            tickets: Number(data.cost_breakdown.tickets) || 0,
+            others: Number(data.cost_breakdown.others) || 0
+          };
+        }
+        this.planStatus = data.status || 'planning';
+        this.actualSpending = Number(data.actual_spending) || 0;
+
+        // 基于行程更新地图点
+        this.updateMapPoints();
+        console.log('✅ [旅行计划页] 已加载计划');
+      } catch (e) {
+        console.error('❌ [旅行计划页] 加载计划失败:', e);
+        alert('加载计划失败，请返回重试');
+        this.$router.push('/profile');
+      }
+    },
+    async ensureLoggedIn() {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (error) throw error;
+        return data && data.user ? data.user : null;
+      } catch (err) {
+        console.error('获取登录状态失败:', err);
+        return null;
+      }
+    },
+
+    formatDate(dateObj) {
+      const y = dateObj.getFullYear();
+      const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+      const d = String(dateObj.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    },
+
+    computeEndDate(startDateStr, durationDays) {
+      try {
+        const start = new Date(startDateStr);
+        if (Number.isFinite(durationDays) && durationDays > 0) {
+          // 例如 7 天行程，结束日期 = 开始 + (7 - 1) 天
+          start.setDate(start.getDate() + (durationDays - 1));
+        }
+        return this.formatDate(start);
+      } catch (e) {
+        console.warn('结束日期计算失败，使用开始日期作为结束日期:', e);
+        return startDateStr;
+      }
+    },
+
     loadTripData() {
       console.log('📋 [旅行计划页] 开始加载旅行数据');
       
@@ -405,8 +549,161 @@ export default {
       // 这里可以添加保存计划的逻辑
     },
     exportPlan() {
-      console.log('导出旅行计划');
-      // 这里可以添加导出计划的逻辑
+      try {
+        // 1) 组装文本内容
+        const lines = [];
+        lines.push(`旅行计划`);
+        lines.push(`——————`);
+        if (this.planId) lines.push(`计划ID: ${this.planId}`);
+        lines.push(`状态: ${this.planStatus === 'completed' ? '已完成' : '规划中'}`);
+        if (this.planStatus === 'completed') {
+          lines.push(`实际总花费: ¥${Number(this.actualSpending || 0).toLocaleString()}`);
+        }
+        lines.push('');
+        lines.push(`目的地: ${this.tripDetails.destination || ''}`);
+        lines.push(`出发时间: ${this.tripDetails.startDate || ''}`);
+        lines.push(`旅行天数: ${this.tripDetails.duration || ''} 天`);
+        lines.push(`预算范围: ¥${Number(this.tripDetails.budget || 0).toLocaleString()}`);
+        lines.push('');
+        lines.push(`费用明细`);
+        lines.push(`- 住宿: ¥${Number(this.costBreakdown.accommodation || 0).toLocaleString()}`);
+        lines.push(`- 交通: ¥${Number(this.costBreakdown.transportation || 0).toLocaleString()}`);
+        lines.push(`- 餐饮: ¥${Number(this.costBreakdown.food || 0).toLocaleString()}`);
+        lines.push(`- 门票: ¥${Number(this.costBreakdown.tickets || 0).toLocaleString()}`);
+        lines.push(`- 其他: ¥${Number(this.costBreakdown.others || 0).toLocaleString()}`);
+        const total = Object.values(this.costBreakdown).reduce((s, v) => s + (Number(v) || 0), 0);
+        lines.push(`总费用: ¥${Number(total).toLocaleString()}`);
+        lines.push('');
+        lines.push('行程安排');
+        this.itinerary.forEach((day, idx) => {
+          lines.push(`第${idx + 1}天 ${day.date || ''}`);
+          (day.activities || []).forEach((act) => {
+            lines.push(`  - 时间: ${act.time || ''}`);
+            lines.push(`    标题: ${act.title || ''}`);
+            lines.push(`    描述: ${act.description || ''}`);
+            if (act.duration) lines.push(`    时长: ${act.duration}`);
+            if (act.cost !== undefined) lines.push(`    费用: ¥${Number(act.cost || 0).toLocaleString()}`);
+          });
+          lines.push('');
+        });
+
+        const content = lines.join('\n');
+
+        // 2) 生成并下载 txt 文件
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const safeDest = (this.tripDetails.destination || '旅行计划').replace(/[\\/:*?"<>|]/g, '_');
+        const datePart = (this.tripDetails.startDate || '').replace(/[^0-9-]/g, '') || 'date';
+        a.href = url;
+        a.download = `${safeDest}_${datePart}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.showMessage('已导出为文本文件', 'success');
+      } catch (e) {
+        console.error('导出计划失败:', e);
+        this.showMessage('导出失败，请稍后重试', 'danger');
+      }
+    },
+
+    async savePlan() {
+      if (this.isReadOnly) {
+        this.showMessage('该计划已保存，当前为只读模式，不能再次保存。', 'info');
+        return;
+      }
+      try {
+        // 1) 确认登录
+        const user = await this.ensureLoggedIn();
+        if (!user) {
+          console.log('未登录，跳转到登录页');
+          this.$router.push({ path: '/login', query: { redirect: '/planning' } });
+          return;
+        }
+
+        // 2) 组织要保存的数据
+        const title = this.userRequest && this.userRequest.trim()
+          ? this.userRequest.trim().slice(0, 200)
+          : `${this.tripDetails.destination} ${this.tripDetails.duration}天行程`;
+
+        const startDate = this.tripDetails.startDate;
+        const duration = Number(this.tripDetails.duration) || 1;
+        const endDate = this.computeEndDate(startDate, duration);
+        const budget = Number(this.tripDetails.budget) || null;
+
+        const payload = {
+          user_id: user.id,
+          title,
+          destination: this.tripDetails.destination || '未指定',
+          start_date: startDate,
+          end_date: endDate,
+          duration,
+          budget,
+          status: 'planning',
+          itinerary: this.itinerary || [],
+          cost_breakdown: {
+            accommodation: Number(this.costBreakdown.accommodation) || 0,
+            transportation: Number(this.costBreakdown.transportation) || 0,
+            food: Number(this.costBreakdown.food) || 0,
+            tickets: Number(this.costBreakdown.tickets) || 0,
+            others: Number(this.costBreakdown.others) || 0
+          }
+        };
+
+        console.log('📝 即将保存旅行计划:', payload);
+
+        // 3) 保存到 Supabase
+        const { data, error } = await supabase
+          .from('travel_plans')
+          .insert([payload])
+          .select('*')
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        console.log('✅ 旅行计划保存成功:', data);
+        this.showMessage('旅行计划已保存到您的账户', 'success');
+      } catch (err) {
+        console.error('❌ 保存旅行计划失败:', err);
+        this.showMessage(`保存失败: ${err.message || '未知错误'}`, 'danger');
+      }
+    },
+    openCompleteModal() {
+      if (!this.planId) return;
+      this.completeAmount = this.actualSpending ? String(this.actualSpending) : '';
+      this.showCompleteModal = true;
+    },
+    async confirmComplete() {
+      const amountNum = Number(this.completeAmount);
+      if (!Number.isFinite(amountNum) || amountNum < 0) {
+        this.showMessage('请输入有效的实际总花费（非负数）', 'danger');
+        return;
+      }
+      try {
+        const { error } = await supabase
+          .from('travel_plans')
+          .update({ status: 'completed', actual_spending: amountNum })
+          .eq('id', this.planId);
+        if (error) throw error;
+        this.planStatus = 'completed';
+        this.actualSpending = amountNum;
+        this.showCompleteModal = false;
+        this.showMessage('已标记为完成旅行，并记录实际花费', 'success');
+      } catch (e) {
+        console.error('标记完成失败:', e);
+        this.showMessage('标记完成失败，请稍后重试', 'danger');
+      }
+    },
+    showMessage(text, type = 'info') {
+      this.messageText = text;
+      this.messageType = type;
+      this.showMessageModal = true;
+    },
+    handleMessageClose() {
+      this.showMessageModal = false;
     }
   }
 };

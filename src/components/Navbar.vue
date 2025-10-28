@@ -100,6 +100,7 @@
 
 <script>
 import { useAuthStore } from '../stores/auth.js';
+import supabase from '../utils/supabase.js';
 
 export default {
   name: 'Navbar',
@@ -147,12 +148,16 @@ export default {
     }
   },
   methods: {
-    showDropdown() {
+    async showDropdown() {
       if (this.hideTimeout) {
         clearTimeout(this.hideTimeout);
         this.hideTimeout = null;
       }
       this.showUserDropdown = true;
+      // 展开时刷新一次统计，确保实时
+      if (this.authStore.isAuthenticated) {
+        await this.loadUserStats();
+      }
     },
     
     hideDropdown() {
@@ -193,25 +198,28 @@ export default {
           return;
         }
 
-        // 确保用户档案已加载
-        if (!this.authStore.userProfile) {
-          await this.authStore.loadUserProfile();
-        }
+        // 直接从 user_profiles 获取统计
+        const uid = this.authStore.user?.id;
+        if (!uid) return;
 
-        // 从用户档案中获取统计数据
-        if (this.authStore.userProfile) {
-          const profile = this.authStore.userProfile;
-          
-          // 更新统计数据
-          this.userStats = {
-            travelPlans: profile.travel_plans_count || 0,
-            completedTrips: profile.completed_trips_count || 0,
-            totalSpending: profile.total_spending || 0,
-            favoriteType: this.getFavoriteTypeText(profile.preferences?.attractionType)
-          };
+        // 查询 user_profiles 中的统计聚合字段
+        const { data: profile, error } = await supabase
+          .from('user_profiles')
+          .select('travel_plans_count, completed_trips_count, total_spending, preferences')
+          .eq('user_id', uid)
+          .single();
+        if (error) throw error;
 
-          console.log('导航栏统计数据已更新:', this.userStats);
-        }
+        const favoriteType = this.getFavoriteTypeText(profile?.preferences?.attractionType);
+
+        this.userStats = {
+          travelPlans: profile?.travel_plans_count || 0,
+          completedTrips: profile?.completed_trips_count || 0,
+          totalSpending: Number(profile?.total_spending) || 0,
+          favoriteType
+        };
+
+        console.log('导航栏统计数据已更新(来自 user_profiles):', this.userStats);
       } catch (error) {
         console.error('加载用户统计数据失败:', error);
       }

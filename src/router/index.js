@@ -36,6 +36,12 @@ const routes = [
     component: TripPlanning
   },
   {
+    path: '/planning/:id',
+    name: 'TripPlanningDetail',
+    component: TripPlanning,
+    props: true
+  },
+  {
     path: '/forgot-password',
     name: 'ForgotPassword',
     component: ForgotPassword

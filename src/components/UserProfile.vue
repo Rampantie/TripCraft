@@ -29,7 +29,7 @@
             <p class="user-email">{{ userInfo.email }}</p>
             <div class="user-stats">
               <div class="stat-item">
-                <span class="stat-number">{{ travelPlans }}</span>
+                <span class="stat-number">{{ travelPlansCount }}</span>
                 <span class="stat-label">旅行计划</span>
               </div>
               <div class="stat-item">
@@ -216,7 +216,7 @@
           </div>
           <div class="plans-list">
             <div 
-              v-for="plan in travelPlans" 
+              v-for="plan in travelPlansList" 
               :key="plan.id" 
               class="plan-item"
               :class="{ 'completed': plan.status === 'completed' }"
@@ -235,8 +235,13 @@
                   {{ getStatusText(plan.status) }}
                 </span>
                 <div class="action-buttons">
-                  <button class="action-btn edit-btn" @click="editPlan(plan.id)">编辑</button>
-                  <button class="action-btn delete-btn" @click="deletePlan(plan.id)">删除</button>
+                  <button class="action-btn edit-btn" @click="viewPlan(plan.id)">查看</button>
+                  <button 
+                    v-if="plan.status === 'completed'" 
+                    class="action-btn edit-btn" 
+                    @click="revertToPlanning(plan.id)"
+                  >设为规划中</button>
+                  <button class="action-btn delete-btn" @click="confirmDeletePlan(plan.id)">删除</button>
                 </div>
               </div>
             </div>
@@ -287,12 +292,26 @@
       @close="hideAvatarSelector"
       @confirm="handleAvatarConfirm"
     />
+
+    <!-- 删除确认弹窗 -->
+    <Modal
+      :show="showDeleteModal"
+      title="删除确认"
+      message="确认要删除该旅行计划吗？此操作不可恢复"
+      confirm-text="删除"
+      cancel-text="取消"
+      confirm-type="danger"
+      @confirm="handleDeleteConfirm"
+      @cancel="handleDeleteCancel"
+      @close="handleDeleteCancel"
+    />
   </div>
 </template>
 
 <script>
 import Navbar from './Navbar.vue';
 import AvatarSelector from './AvatarSelector.vue';
+import Modal from './Modal.vue';
 import { useAuthStore } from '../stores/auth.js';
 import supabase from '../utils/supabase.js';
 
@@ -300,7 +319,8 @@ export default {
   name: 'UserProfile',
   components: {
     Navbar,
-    AvatarSelector
+    AvatarSelector,
+    Modal
   },
   setup() {
     const authStore = useAuthStore();
@@ -318,7 +338,11 @@ export default {
       isLoading: true,
       isSavingPreferences: false,
       saveMessage: '',
-      showAvatarSelectorModal: false
+      showAvatarSelectorModal: false,
+      travelPlansList: [],
+      travelPlansCountInternal: 0,
+      showDeleteModal: false,
+      deletePlanId: null
     }
   },
   computed: {
@@ -328,12 +352,15 @@ export default {
         email: this.authStore.userEmail
       };
     },
-    travelPlans() {
-      // 直接从用户档案获取旅行计划数
-      return this.authStore.userProfile?.travel_plans_count || 0;
+    travelPlansCount() {
+      const fromProfile = this.authStore.userProfile?.travel_plans_count || 0;
+      return this.travelPlansCountInternal || fromProfile || (this.travelPlansList ? this.travelPlansList.length : 0);
     },
     completedTrips() {
-      // 直接从用户档案获取已完成旅行数
+      // 基于实际列表统计（更准确）
+      if (Array.isArray(this.travelPlansList) && this.travelPlansList.length > 0) {
+        return this.travelPlansList.filter(p => p.status === 'completed').length;
+      }
       return this.authStore.userProfile?.completed_trips_count || 0;
     },
     totalSpending() {
@@ -357,6 +384,7 @@ export default {
 
     // 加载用户数据
     await this.loadUserData();
+    await this.loadTravelPlans();
     this.isLoading = false;
   },
   methods: {
@@ -379,11 +407,36 @@ export default {
         }
 
         // 数据现在直接从 authStore.userProfile 获取
-        
-        // 这里可以添加加载旅行计划的逻辑
-        // await this.loadTravelPlans();
       } catch (error) {
         console.error('加载用户数据失败:', error);
+      }
+    },
+
+    async loadTravelPlans() {
+      try {
+        if (!this.authStore.user?.id) return;
+        const { data, error } = await supabase
+          .from('travel_plans')
+          .select('id, title, destination, start_date, end_date, duration, budget, status')
+          .eq('user_id', this.authStore.user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        this.travelPlansList = (data || []).map(p => ({
+          id: p.id,
+          title: p.title,
+          destination: p.destination,
+          startDate: p.start_date,
+          endDate: p.end_date,
+          duration: p.duration,
+          budget: p.budget,
+          status: p.status || 'planning'
+        }));
+
+        this.travelPlansCountInternal = this.travelPlansList.length;
+      } catch (e) {
+        console.error('加载旅行计划失败:', e);
       }
     },
     
@@ -436,13 +489,62 @@ export default {
       console.log('添加新计划');
       // 这里可以添加新建计划的逻辑
     },
-    editPlan(planId) {
-      console.log('编辑计划:', planId);
-      // 这里可以添加编辑计划的逻辑
+    viewPlan(planId) {
+      this.$router.push({ name: 'TripPlanningDetail', params: { id: planId }, query: { readonly: '1' } });
     },
-    deletePlan(planId) {
-      console.log('删除计划:', planId);
-      // 这里可以添加删除计划的逻辑
+    confirmDeletePlan(planId) {
+      this.deletePlanId = planId;
+      this.showDeleteModal = true;
+    },
+    async deletePlan(planId) {
+      try {
+        const { error } = await supabase
+          .from('travel_plans')
+          .delete()
+          .eq('id', planId)
+          .eq('user_id', this.authStore.user.id);
+        if (error) throw error;
+        // 前端列表移除
+        this.travelPlansList = this.travelPlansList.filter(p => p.id !== planId);
+        this.travelPlansCountInternal = this.travelPlansList.length;
+        this.showDeleteModal = false;
+        this.showMessage('计划删除成功！', true);
+      } catch (e) {
+        console.error('删除计划失败:', e);
+        this.showMessage('删除计划失败，请稍后再试', false);
+      }
+    },
+    async revertToPlanning(planId) {
+      try {
+        const { data, error } = await supabase
+          .from('travel_plans')
+          .update({ status: 'planning', actual_spending: 0 })
+          .eq('id', planId)
+          .eq('user_id', this.authStore.user.id)
+          .select('id, status, actual_spending')
+          .single();
+        if (error) throw error;
+        // 更新本地列表
+        const idx = this.travelPlansList.findIndex(p => p.id === planId);
+        if (idx !== -1) {
+          this.travelPlansList[idx].status = 'planning';
+          this.travelPlansList[idx].actualSpending = 0;
+        }
+        this.travelPlansCountInternal = this.travelPlansList.length;
+        this.showMessage('已设为规划中，实际花费已清零', true);
+      } catch (e) {
+        console.error('设为规划中失败:', e);
+        this.showMessage('设为规划中失败，请稍后重试', false);
+      }
+    },
+    handleDeleteConfirm() {
+      if (this.deletePlanId) {
+        this.deletePlan(this.deletePlanId);
+      }
+    },
+    handleDeleteCancel() {
+      this.showDeleteModal = false;
+      this.deletePlanId = null;
     },
     getStatusText(status) {
       const statusMap = {
