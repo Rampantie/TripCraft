@@ -323,7 +323,9 @@ ${personalizedDescription}
     "destination": "目的地",
     "startDate": "出发日期(YYYY-MM-DD格式，必须是未来日期)",
     "duration": 天数(数字),
-    "budget": 预算(数字)
+    "budget": 预算(数字),
+    "latitude": 目的地代表纬度(数字),
+    "longitude": 目的地代表经度(数字)
   },
   "itinerary": [
     {
@@ -384,7 +386,12 @@ ${personalizedDescription}
 - 建议出发日期：${tomorrowDateStr} 或之后
 - 行程中的每一天的日期都要基于出发日期正确计算
 
-5. 返回要求：
+5. 地图定位要求（重要）：
+- 仅输出一个代表本次旅行目的地的坐标（city-level），用于地图单点标记
+- 该坐标应接近城市中心或主要景点聚集区
+- 请将该坐标填写在 tripDetails.latitude 与 tripDetails.longitude 字段中
+
+6. 返回要求：
 - 返回纯JSON格式，不要包含其他文字
 - 确保所有数字字段都是数字类型，不是字符串
 

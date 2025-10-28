@@ -75,11 +75,8 @@
             <!-- 地图容器 -->
             <div class="map-container">
               <div class="map-header">
-                <h3 class="section-title">行程地图</h3>
+                <h3 class="section-title">城市地图</h3>
                 <div class="map-controls">
-                  <button class="map-btn" @click="toggleMapView">
-                    {{ mapView === 'route' ? '景点模式' : '路线模式' }}
-                  </button>
         <button 
           v-if="planId && isReadOnly && planStatus !== 'completed'"
           class="btn-primary"
@@ -93,47 +90,7 @@
                 </div>
               </div>
               <div class="map-content">
-                <!-- 模拟地图 -->
-                <div class="mock-map">
-                  <div class="map-points">
-                    <div 
-                      v-for="(point, index) in mapPoints" 
-                      :key="index"
-                      class="map-point"
-                      :style="{ 
-                        left: point.x + '%', 
-                        top: point.y + '%',
-                        backgroundColor: point.color 
-                      }"
-                      :title="point.name"
-                    >
-                      <span class="point-number">{{ index + 1 }}</span>
-                    </div>
-                    <svg class="route-line" viewBox="0 0 100 100" preserveAspectRatio="none">
-                      <path 
-                        d="M10,20 Q30,10 50,30 T90,25" 
-                        stroke="#667eea" 
-                        stroke-width="2" 
-                        fill="none"
-                        stroke-dasharray="5,5"
-                      />
-                    </svg>
-                  </div>
-                  <div class="map-legend">
-                    <div class="legend-item">
-                      <div class="legend-color" style="background: #10b981;"></div>
-                      <span>住宿</span>
-                    </div>
-                    <div class="legend-item">
-                      <div class="legend-color" style="background: #3b82f6;"></div>
-                      <span>景点</span>
-                    </div>
-                    <div class="legend-item">
-                      <div class="legend-color" style="background: #f59e0b;"></div>
-                      <span>餐厅</span>
-                    </div>
-                  </div>
-                </div>
+                <div ref="leafletMap" class="leaflet-map"></div>
               </div>
             </div>
 
@@ -240,6 +197,11 @@
 import Navbar from './Navbar.vue';
 import Modal from './Modal.vue';
 import supabase from '../utils/supabase.js';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import iconUrl from 'leaflet/dist/images/marker-icon.png';
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
 export default {
   name: 'TripPlanning',
@@ -261,6 +223,10 @@ export default {
       completeAmount: '',
       selectedDay: 0,
       mapView: 'route',
+      leaflet: {
+        map: null,
+        markers: []
+      },
       tripDetails: {
         destination: '日本东京、京都、大阪',
         startDate: '2024-04-01',
@@ -391,6 +357,7 @@ export default {
       // 新建流程：从 sessionStorage 加载
       this.loadTripData();
     }
+    this.$nextTick(() => this.initLeaflet());
   },
   methods: {
     async loadPlanById(id) {
@@ -528,11 +495,124 @@ export default {
       
       this.mapPoints = points;
       console.log('🗺️ [旅行计划页] 地图点已更新:', points);
+      this.$nextTick(() => this.refreshLeafletMarkers());
     },
     
     getPointColor(activityIndex) {
       const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
       return colors[activityIndex % colors.length];
+    },
+    initLeaflet() {
+      try {
+        const el = this.$refs.leafletMap;
+        if (!el) return;
+        if (this.leaflet.map) {
+          this.leaflet.map.remove();
+        }
+        // 修复打包后默认图标404问题
+        L.Icon.Default.mergeOptions({
+          iconRetinaUrl,
+          iconUrl,
+          shadowUrl
+        });
+        // 默认中心先放北京，后续根据点集适配
+        this.leaflet.map = L.map(el).setView([39.9042, 116.4074], 5);
+        const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap contributors'
+        });
+        baseLayer.on('tileerror', () => {
+          // 发生错误时切换到备用瓦片源
+          L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors, Tiles style by HOT'
+          }).addTo(this.leaflet.map);
+        });
+        baseLayer.addTo(this.leaflet.map);
+        this.refreshLeafletMarkers();
+        setTimeout(() => this.leaflet.map.invalidateSize(), 0);
+      } catch (e) {
+        console.error('Leaflet 初始化失败:', e);
+      }
+    },
+    async refreshLeafletMarkers() {
+      if (!this.leaflet.map) return;
+      // 清理旧标记
+      this.leaflet.markers.forEach(m => m.remove());
+      this.leaflet.markers = [];
+
+      const bounds = L.latLngBounds([]);
+
+      // 优先使用 tripDetails 中的经纬度
+      const lat = Number(this.tripDetails.latitude);
+      const lng = Number(this.tripDetails.longitude);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        const coord = [lat, lng];
+        const marker = L.marker(coord).addTo(this.leaflet.map)
+          .bindPopup(`<b>${this.tripDetails.destination || '目的地'}</b><br/>旅行目的地`);
+        this.leaflet.markers.push(marker);
+        bounds.extend(coord);
+      }
+
+      // 若无经纬度，则回退到目的地名称地理编码
+      if (!bounds.isValid()) {
+        const cities = this.extractCitiesFromDestination();
+        const results = await Promise.all(cities.map(async (city) => {
+          const coord = await this.geocodeCity(city);
+          return { city, coord };
+        }));
+
+        results.forEach(({ city, coord }) => {
+          if (coord) {
+            const marker = L.marker(coord).addTo(this.leaflet.map)
+              .bindPopup(`<b>${city}</b><br/>旅行目的地`);
+            this.leaflet.markers.push(marker);
+            bounds.extend(coord);
+          }
+        });
+      }
+
+      if (bounds.isValid()) {
+        this.leaflet.map.fitBounds(bounds.pad(0.2));
+      } else {
+        this.leaflet.map.setView([39.9042, 116.4074], 5);
+      }
+    },
+
+    extractCitiesFromDestination() {
+      const destination = (this.tripDetails.destination || '').trim();
+      if (!destination) return [];
+      // 以常见分隔符拆分：中文顿号/逗号、英文逗号、斜杠、竖线、空格等
+      const parts = destination.split(/[、，,\/|\-\s]+/).map(s => s.trim()).filter(Boolean);
+      // 去重
+      const unique = Array.from(new Set(parts));
+      // 最多取前5个，避免触发地理编码限流
+      return unique.slice(0, 5);
+    },
+
+    async geocodeCity(name) {
+      try {
+        if (!this._geoCache) this._geoCache = {};
+        if (this._geoCache[name]) return this._geoCache[name];
+        // 使用 OpenStreetMap Nominatim 公共地理编码服务（有速率限制，请勿高频调用）
+        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=0&accept-language=zh-CN&q=${encodeURIComponent(name)}`;
+        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        if (!resp.ok) return null;
+        const json = await resp.json();
+        if (Array.isArray(json) && json.length > 0) {
+          const lat = parseFloat(json[0].lat);
+          const lon = parseFloat(json[0].lon);
+          if (Number.isFinite(lat) && Number.isFinite(lon)) {
+            const coord = [lat, lon];
+            this._geoCache[name] = coord;
+            return coord;
+          }
+        }
+        return null;
+      } catch (e) {
+        console.warn('地理编码失败:', name, e);
+        return null;
+      }
     },
     
     selectDay(dayIndex) {
@@ -950,11 +1030,9 @@ export default {
   overflow: hidden;
 }
 
-.mock-map {
+.leaflet-map {
   width: 100%;
   height: 100%;
-  position: relative;
-  background: linear-gradient(135deg, #e0f2fe 0%, #f0f9ff 100%);
 }
 
 .map-points {
