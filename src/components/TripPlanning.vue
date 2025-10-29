@@ -187,6 +187,12 @@
           class="complete-input"
           placeholder="例如：9800"
         />
+        <label class="complete-label">实际出发日期</label>
+        <input
+          v-model="completeDate"
+          type="date"
+          class="complete-input"
+        />
         <p class="complete-tip">保存后该计划将标记为“已完成”。</p>
       </div>
     </Modal>
@@ -221,6 +227,7 @@ export default {
       actualSpending: 0,
       showCompleteModal: false,
       completeAmount: '',
+      completeDate: '',
       selectedDay: 0,
       mapView: 'route',
       leaflet: {
@@ -365,7 +372,7 @@ export default {
         console.log('🔎 [旅行计划页] 加载已保存计划 ID:', id);
         const { data, error } = await supabase
           .from('travel_plans')
-          .select('title, destination, start_date, end_date, duration, budget, status, actual_spending, itinerary, cost_breakdown')
+          .select('title, destination, start_date, end_date, duration, budget, status, actual_spending, itinerary, cost_breakdown, latitude, longitude')
           .eq('id', id)
           .single();
 
@@ -377,7 +384,9 @@ export default {
           destination: data.destination || '',
           startDate: data.start_date || '',
           duration: data.duration || 1,
-          budget: Number(data.budget) || 0
+          budget: Number(data.budget) || 0,
+          latitude: (data.latitude !== undefined && data.latitude !== null) ? Number(data.latitude) : undefined,
+          longitude: (data.longitude !== undefined && data.longitude !== null) ? Number(data.longitude) : undefined
         };
         this.itinerary = Array.isArray(data.itinerary) ? data.itinerary : [];
         if (data.cost_breakdown && typeof data.cost_breakdown === 'object') {
@@ -554,9 +563,9 @@ export default {
         bounds.extend(coord);
       }
 
-      // 若无经纬度，则回退到目的地名称地理编码
+      // 若无经纬度，则回退到目的地名称地理编码（仅取第一个城市，降低限流风险）
       if (!bounds.isValid()) {
-        const cities = this.extractCitiesFromDestination();
+        const cities = this.extractCitiesFromDestination().slice(0, 1);
         const results = await Promise.all(cities.map(async (city) => {
           const coord = await this.geocodeCity(city);
           return { city, coord };
@@ -596,7 +605,12 @@ export default {
         if (this._geoCache[name]) return this._geoCache[name];
         // 使用 OpenStreetMap Nominatim 公共地理编码服务（有速率限制，请勿高频调用）
         const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=0&accept-language=zh-CN&q=${encodeURIComponent(name)}`;
-        const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        const resp = await fetch(url, { 
+          headers: { 
+            'Accept': 'application/json',
+            'User-Agent': 'TripCraft/1.0 (tripcraft-app)'
+          } 
+        });
         if (!resp.ok) return null;
         const json = await resp.json();
         if (Array.isArray(json) && json.length > 0) {
@@ -728,7 +742,10 @@ export default {
             food: Number(this.costBreakdown.food) || 0,
             tickets: Number(this.costBreakdown.tickets) || 0,
             others: Number(this.costBreakdown.others) || 0
-          }
+          },
+          // 若模型已返回经纬度，则直接保存
+          latitude: (this.tripDetails && Number.isFinite(Number(this.tripDetails.latitude))) ? Number(this.tripDetails.latitude) : null,
+          longitude: (this.tripDetails && Number.isFinite(Number(this.tripDetails.longitude))) ? Number(this.tripDetails.longitude) : null
         };
 
         console.log('📝 即将保存旅行计划:', payload);
@@ -754,6 +771,7 @@ export default {
     openCompleteModal() {
       if (!this.planId) return;
       this.completeAmount = this.actualSpending ? String(this.actualSpending) : '';
+      this.completeDate = this.tripDetails.startDate || '';
       this.showCompleteModal = true;
     },
     async confirmComplete() {
@@ -762,14 +780,34 @@ export default {
         this.showMessage('请输入有效的实际总花费（非负数）', 'danger');
         return;
       }
+      const dateStr = (this.completeDate || '').trim();
+      if (!dateStr || isNaN(new Date(dateStr))) {
+        this.showMessage('请输入有效的实际出发日期', 'danger');
+        return;
+      }
+      const newStart = dateStr;
+      const newEnd = this.computeEndDate(newStart, Number(this.tripDetails.duration) || 1);
+      // 依据新出发日重写 itinerary 每天的 date 字段
+      let updatedItinerary = this.itinerary;
+      if (Array.isArray(this.itinerary)) {
+        const start = new Date(newStart);
+        updatedItinerary = this.itinerary.map((day, idx) => {
+          const d = new Date(start);
+          d.setDate(start.getDate() + idx);
+          return { ...day, date: d.toISOString().split('T')[0] };
+        });
+      }
       try {
         const { error } = await supabase
           .from('travel_plans')
-          .update({ status: 'completed', actual_spending: amountNum })
+          .update({ status: 'completed', actual_spending: amountNum, start_date: newStart, end_date: newEnd, itinerary: updatedItinerary })
           .eq('id', this.planId);
         if (error) throw error;
         this.planStatus = 'completed';
         this.actualSpending = amountNum;
+        // 同步本地日期与行程
+        this.tripDetails.startDate = newStart;
+        this.itinerary = updatedItinerary;
         this.showCompleteModal = false;
         this.showMessage('已标记为完成旅行，并记录实际花费', 'success');
       } catch (e) {

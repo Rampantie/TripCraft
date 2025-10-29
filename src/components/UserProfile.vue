@@ -25,7 +25,18 @@
             </button>
           </div>
           <div class="user-details">
-            <h2 class="user-name">{{ userInfo.name }}</h2>
+            <div class="username-wrapper">
+              <h2 
+                class="user-name username-clickable"
+                role="button"
+                tabindex="0"
+                @click="openChangeNameModal"
+                @keydown.enter="openChangeNameModal"
+              >
+                {{ userInfo.name }}
+              </h2>
+              <span class="username-tooltip">点击修改昵称</span>
+            </div>
             <p class="user-email">{{ userInfo.email }}</p>
             <div class="user-stats">
               <div class="stat-item">
@@ -245,22 +256,36 @@
         <!-- 花费统计 -->
         <div class="spending-card">
           <h3 class="card-title">花费统计</h3>
-        <div class="spending-stats">
-          <div class="spending-item">
-            <div class="spending-label">总花费</div>
-            <div class="spending-amount">¥{{ (totalSpending || 0).toLocaleString() }}</div>
+          <div class="spending-grid">
+            <div class="spending-left">
+              <div class="spending-chart">
+                <div v-if="completedSpendingList.length === 0" class="chart-placeholder">
+                  <p>暂无已完成计划，完成后将展示各计划实际花费占比</p>
+                </div>
+                <div v-else ref="spendingPieEchart" class="echart-pie"></div>
+              </div>
+            </div>
+            <div class="spending-right">
+              <div class="kpi-grid">
+                <div class="kpi-card">
+                  <div class="kpi-label">总花费</div>
+                  <div class="kpi-value">¥{{ (totalSpending || 0).toLocaleString() }}</div>
+                </div>
+                <div class="kpi-card">
+                  <div class="kpi-label">平均每次</div>
+                  <div class="kpi-value">¥{{ (averageSpending || 0).toLocaleString() }}</div>
+                </div>
+                <div class="kpi-card">
+                  <div class="kpi-label">完成率</div>
+                  <div class="kpi-value">{{ completionRate }}%</div>
+                </div>
+              </div>
+              <div class="mini-chart-card">
+                <div class="mini-title">近6个月实际花费</div>
+                <div ref="spendingMiniBarEchart" class="echart-mini"></div>
+              </div>
+            </div>
           </div>
-          <div class="spending-item">
-            <div class="spending-label">平均每次</div>
-            <div class="spending-amount">¥{{ (averageSpending || 0).toLocaleString() }}</div>
-          </div>
-        </div>
-        <div class="spending-chart">
-          <div v-if="completedSpendingList.length === 0" class="chart-placeholder">
-            <p>暂无已完成计划，完成后将展示各计划实际花费占比</p>
-          </div>
-          <div v-else ref="spendingPieEchart" class="echart-pie"></div>
-        </div>
         </div>
         
         
@@ -285,6 +310,38 @@
       @confirm="handleDeleteConfirm"
       @cancel="handleDeleteCancel"
       @close="handleDeleteCancel"
+    />
+
+    <!-- 修改昵称弹窗 -->
+    <Modal
+      :show="showChangeNameModal"
+      title="修改昵称"
+      message="请输入新的昵称（2-20个字符）"
+      confirm-text="保存"
+      cancel-text="取消"
+      input-type="text"
+      input-placeholder="输入新的昵称"
+      :input-value="changeNameValue"
+      @update:inputValue="val => changeNameValue = val"
+      @confirm="confirmChangeName"
+      @cancel="closeChangeNameModal"
+      @close="closeChangeNameModal"
+    />
+    
+    <!-- 修改昵称弹窗 -->
+    <Modal
+      :show="showChangeNameModal"
+      title="修改昵称"
+      message="请输入新的昵称（2-20个字符）"
+      confirm-text="保存"
+      cancel-text="取消"
+      input-type="text"
+      input-placeholder="输入新的昵称"
+      :input-value="changeNameValue"
+      @update:inputValue="val => changeNameValue = val"
+      @confirm="confirmChangeName"
+      @cancel="closeChangeNameModal"
+      @close="closeChangeNameModal"
     />
   </div>
 </template>
@@ -325,13 +382,16 @@ export default {
       travelPlansCountInternal: 0,
       showDeleteModal: false,
       deletePlanId: null,
-      echartInstance: null
+      echartInstance: null,
+      miniBarInstance: null,
+      showChangeNameModal: false,
+      changeNameValue: ''
     }
   },
   computed: {
     userInfo() {
       return {
-        name: this.authStore.displayName,
+        name: (this.authStore.userProfile && this.authStore.userProfile.username) || this.authStore.displayName,
         email: this.authStore.userEmail
       };
     },
@@ -352,6 +412,17 @@ export default {
     },
     averageSpending() {
       return this.completedTrips > 0 ? Math.round(this.totalSpending / this.completedTrips) : 0;
+    },
+    highestSpending() {
+      const completed = (this.travelPlansList || []).filter(p => p.status === 'completed');
+      if (completed.length === 0) return 0;
+      return completed.reduce((m, p) => Math.max(m, Number(p.actualSpending || 0)), 0);
+    },
+    completionRate() {
+      const total = this.travelPlansCount || 0;
+      const done = this.completedTrips || 0;
+      if (total === 0) return 0;
+      return Math.round((done / total) * 100);
     },
     completedSpendingList() {
       const completed = (this.travelPlansList || []).filter(p => p.status === 'completed');
@@ -397,6 +468,10 @@ export default {
     if (this.echartInstance) {
       this.echartInstance.dispose();
       this.echartInstance = null;
+    }
+    if (this.miniBarInstance) {
+      this.miniBarInstance.dispose();
+      this.miniBarInstance = null;
     }
     window.removeEventListener('resize', this.handleResize);
   },
@@ -449,7 +524,10 @@ export default {
         }));
 
         this.travelPlansCountInternal = this.travelPlansList.length;
-        this.$nextTick(() => this.updateEcharts());
+        this.$nextTick(() => {
+          this.updateEcharts();
+          this.updateMiniBar();
+        });
       } catch (e) {
         console.error('加载旅行计划失败:', e);
       }
@@ -471,6 +549,9 @@ export default {
     handleResize() {
       if (this.echartInstance) {
         this.echartInstance.resize();
+      }
+      if (this.miniBarInstance) {
+        this.miniBarInstance.resize();
       }
     },
     updateEcharts() {
@@ -527,6 +608,79 @@ export default {
       };
       this.echartInstance.setOption(option);
       this.echartInstance.resize();
+    },
+    buildMonthlySeries() {
+      // 近6个月（含当月），按计划结束月份聚合实际花费
+      const now = new Date();
+      const months = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        months.push({ key, y: 0 });
+      }
+      const idxMap = months.reduce((m, it, i) => { m[it.key] = i; return m; }, {});
+      (this.travelPlansList || []).forEach(p => {
+        if (p.status !== 'completed') return;
+        const end = p.endDate || p.startDate; // 若无结束日期则退化到开始日期
+        if (!end) return;
+        const d = new Date(end);
+        if (isNaN(d)) return;
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (key in idxMap) {
+          months[idxMap[key]].y += Number(p.actualSpending || 0);
+        }
+      });
+      return {
+        labels: months.map(m => m.key),
+        values: months.map(m => Math.round(m.y))
+      };
+    },
+    initMiniBar() {
+      const el = this.$refs.spendingMiniBarEchart;
+      if (!el) return;
+      if (this.miniBarInstance) {
+        this.miniBarInstance.dispose();
+      }
+      this.miniBarInstance = echarts.init(el);
+    },
+    updateMiniBar() {
+      if (!this.$refs.spendingMiniBarEchart) return;
+      if (!this.miniBarInstance) this.initMiniBar();
+      if (!this.miniBarInstance) return;
+      const { labels, values } = this.buildMonthlySeries();
+      const option = {
+        grid: { left: 8, right: 8, top: 24, bottom: 24 },
+        xAxis: {
+          type: 'category',
+          data: labels,
+          axisTick: { show: false },
+          axisLine: { lineStyle: { color: '#ddd' } },
+          axisLabel: { color: '#666', fontSize: 10 }
+        },
+        yAxis: {
+          type: 'value',
+          axisLabel: { color: '#666', fontSize: 10,
+            formatter: (v) => v >= 10000 ? `¥${Math.round(v/1000)/10}万` : `¥${v}` },
+          splitLine: { lineStyle: { color: '#eee' } }
+        },
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          formatter: (p) => {
+            const item = p && p[0];
+            if (!item) return '';
+            return `${item.axisValue}<br/>实际花费：¥${Number(item.value || 0).toLocaleString()}`;
+          }
+        },
+        series: [{
+          type: 'bar',
+          data: values,
+          itemStyle: { color: '#667eea', borderRadius: [4,4,0,0] },
+          barWidth: '50%'
+        }]
+      };
+      this.miniBarInstance.setOption(option);
+      this.miniBarInstance.resize();
     },
     
     handleAvatarClick() {
@@ -703,6 +857,33 @@ export default {
           this.saveMessage = '';
         }, 3000);
       }
+    },
+    openChangeNameModal() {
+      this.changeNameValue = this.userInfo.name || '';
+      this.showChangeNameModal = true;
+    },
+    closeChangeNameModal() {
+      this.showChangeNameModal = false;
+    },
+    async confirmChangeName() {
+      const newName = (this.changeNameValue || '').trim();
+      if (newName.length < 2 || newName.length > 20) {
+        this.showMessage('昵称长度需为 2-20 个字符', false);
+        return;
+      }
+      try {
+        const result = await this.authStore.updateUserProfile({ username: newName });
+        if (result && result.success) {
+          await this.authStore.loadUserProfile();
+          this.showMessage('昵称更新成功！', true);
+          this.showChangeNameModal = false;
+        } else {
+          this.showMessage('昵称更新失败，请稍后重试', false);
+        }
+      } catch (e) {
+        console.error('更新昵称失败:', e);
+        this.showMessage('更新昵称失败，请稍后重试', false);
+      }
     }
   }
 };
@@ -832,6 +1013,48 @@ export default {
   font-weight: 700;
   color: #333;
   margin-bottom: 8px;
+}
+
+.username-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.username-clickable {
+  cursor: pointer;
+}
+
+.username-tooltip {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  margin-top: 6px;
+  background: rgba(17, 24, 39, 0.95);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+  transform: translateY(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.15s ease;
+}
+
+.username-wrapper:hover .username-tooltip,
+.username-wrapper:focus-within .username-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.username-clickable {
+  cursor: pointer;
+  position: relative;
+}
+.username-clickable:hover {
+  text-decoration: underline dotted;
 }
 
 .user-email {
@@ -1127,6 +1350,66 @@ export default {
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.2);
+  grid-column: 1 / -1;
+}
+
+.spending-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 20px;
+}
+
+.spending-left {
+  width: 100%;
+}
+
+.spending-right {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.kpi-card {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 12px 14px;
+  border: 1px solid #eef2f7;
+}
+
+.kpi-label {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+.kpi-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #333;
+}
+
+.mini-chart-card {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 12px 14px 8px;
+  border: 1px solid #eef2f7;
+}
+
+.mini-title {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.echart-mini {
+  width: 100%;
+  height: 120px;
 }
 
 .spending-stats {
@@ -1199,6 +1482,12 @@ export default {
   .spending-stats {
     flex-direction: column;
     gap: 16px;
+  }
+  .spending-grid {
+    grid-template-columns: 1fr;
+  }
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
   }
   
   .plan-item {

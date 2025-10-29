@@ -13,6 +13,16 @@
         <slot>
           <p class="modal-message">{{ message }}</p>
         </slot>
+        <div v-if="inputType" class="modal-input-wrap">
+          <input
+            :type="inputType"
+            class="modal-input"
+            :placeholder="inputPlaceholder"
+            :value="inputValue"
+            @input="$emit('update:inputValue', $event.target.value)"
+            autofocus
+          />
+        </div>
       </div>
       <div class="modal-footer">
         <button 
@@ -70,9 +80,21 @@ export default {
       type: String,
       default: 'primary', // primary, danger, success
       validator: value => ['primary', 'danger', 'success'].includes(value)
+    },
+    inputType: {
+      type: String,
+      default: ''
+    },
+    inputPlaceholder: {
+      type: String,
+      default: ''
+    },
+    inputValue: {
+      type: [String, Number],
+      default: ''
     }
   },
-  emits: ['close', 'confirm', 'cancel'],
+  emits: ['close', 'confirm', 'cancel', 'update:inputValue'],
   methods: {
     handleOverlayClick() {
       if (this.showClose) {
@@ -165,6 +187,24 @@ export default {
   color: #4b5563;
   line-height: 1.5;
   margin: 0;
+}
+
+.modal-input-wrap {
+  margin-top: 12px;
+}
+
+.modal-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  outline: none;
+  font-size: 14px;
+}
+.modal-input:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
 }
 
 .modal-footer {
