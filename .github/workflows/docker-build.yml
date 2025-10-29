@@ -8,17 +8,18 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    env:
+      ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }}
+      ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }}
     strategy:
       matrix:
         service: [ frontend, backend ]
         include:
           - service: frontend
             dockerfile: Dockerfile.frontend
-            image_name: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/tripcraft-frontend
             context: .
           - service: backend
             dockerfile: Dockerfile.backend
-            image_name: ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/tripcraft-backend
             context: .
 
     steps:
@@ -34,7 +35,7 @@ jobs:
       - name: Login to Aliyun ACR
         uses: docker/login-action@v3
         with:
-          registry: ${{ secrets.ACR_REGISTRY }}
+          registry: ${{ env.ACR_REGISTRY }}
           username: ${{ secrets.ACR_USERNAME }}
           password: ${{ secrets.ACR_PASSWORD }}
 
@@ -42,7 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ matrix.image_name }}
+          images: ${{ env.ACR_REGISTRY }}/${{ env.ACR_NAMESPACE }}/tripcraft-${{ matrix.service }}
           tags: |
             type=ref,event=branch
             type=sha
