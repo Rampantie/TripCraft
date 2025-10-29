@@ -1,14 +1,18 @@
 FROM node:18-alpine
-WORKDIR /app
 
-# 仅安装生产依赖
-COPY package*.json ./
+# 切换到后端目录作为工作目录
+WORKDIR /app/backend
+
+# 仅拷贝后端依赖清单并安装生产依赖
+COPY backend/package*.json ./
 RUN npm ci --omit=dev
 
-# 拷贝后端代码
-COPY backend ./backend
+# 拷贝后端源代码
+COPY backend ./
 
 ENV PORT=3001
 EXPOSE 3001
-CMD ["node", "backend/server.js"]
+
+# 直接从后端目录启动
+CMD ["node", "server.js"]
 
