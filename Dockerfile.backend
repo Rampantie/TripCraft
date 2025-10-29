@@ -1,0 +1,14 @@
+FROM node:18-alpine
+WORKDIR /app
+
+# 仅安装生产依赖
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# 拷贝后端代码
+COPY backend ./backend
+
+ENV PORT=3001
+EXPOSE 3001
+CMD ["node", "backend/server.js"]
+
