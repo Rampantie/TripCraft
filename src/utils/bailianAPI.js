@@ -7,7 +7,7 @@
 
 class BailianAPI {
   constructor() {
-    this.apiKey = process.env.VUE_APP_BAILIAN_API_KEY || 'sk-4dd76a7ef7464c3c98f18339a7b31bf2';
+    this.apiKey = process.env.VUE_APP_BAILIAN_API_KEY;
     this.baseURL = 'https://dashscope.aliyuncs.com/api/v1';
     this.model = 'qwen-plus'; // 使用通义千问模型
   }
