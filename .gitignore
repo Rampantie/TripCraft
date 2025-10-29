@@ -6,6 +6,10 @@ config.env
 .env.production
 .env
 .env.local
+backend/.env
+
+# 忽略数据库架构文件
+supabase-schema.sql
 
 # 忽略日志文件
 logs/

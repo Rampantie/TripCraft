@@ -13,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // 设置默认的API Key（如果环境变量未设置）
-const BAILIAN_API_KEY = process.env.BAILIAN_API_KEY || 'sk-4dd76a7ef7464c3c98f18339a7b31bf2';
+const BAILIAN_API_KEY = process.env.BAILIAN_API_KEY;
 
 // 中间件
 app.use(cors({
