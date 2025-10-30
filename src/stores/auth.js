@@ -179,6 +179,7 @@ export const useAuthStore = defineStore('auth', {
           clearTimeout(timeoutId);
         }
         
+        
         // 防抖处理
         timeoutId = setTimeout(() => {
           if (event === 'SIGNED_IN' && session?.user) {
