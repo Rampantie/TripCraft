@@ -336,9 +336,7 @@ ${personalizedDescription}
           "title": "活动标题",
           "description": "简短描述",
           "duration": "持续时间",
-          "category": "活动类别(transportation|accommodation|attraction|restaurant|other)",
           "place": "地点/名称",
-          "address": "地址(可选)",
           "cost": 花费(数字)
         }
       ]
@@ -359,16 +357,10 @@ ${personalizedDescription}
 - 住宿推荐要符合用户的住宿偏好
 - 交通方式要符合用户的交通偏好
 - 每天安排3-6个活动（根据旅行节奏调整）
-- 每个活动包含时间、地点、简短描述、花费、category分类
+- 每个活动包含时间、地点、简短描述、花费
 - 时间安排要合理，考虑交通时间
 - 活动要符合目的地特色
-
-2.1 每日必含信息（重要）：
-- 每天的 activities 中必须至少包含以下类别各≥1条：
-  * transportation（交通：到达/离开/市内移动等）
-  * accommodation（住宿：入住/续住/退房等）
-  * attraction（景点/活动/项目等）
-  * restaurant（餐饮：早餐/午餐/晚餐/特色小吃等）
+- 每日的活动要至少包含交通、住宿、景点、餐饮类型的各一个
 
 3. 费用计算要求（重要）：
 - 每个活动的cost字段必须反映实际花费
@@ -387,22 +379,8 @@ ${personalizedDescription}
 - 门票费用要根据景点类型：
   * 人文景点：博物馆20-100元，历史建筑30-150元，艺术展览50-200元
   * 自然景点：公园10-50元，自然保护区50-200元，主题公园200-500元
-- 所有费用从 activities 的 cost 字段汇总得到，按 category 分类聚合：
-  * accommodation = 所有 category=accommodation 的 cost 之和
-  * transportation = 所有 category=transportation 的 cost 之和
-  * food = 所有 category=restaurant 的 cost 之和
-  * tickets = 所有 category=attraction 的 cost 之和（若含付费活动/门票）
-  * others = 所有 category=other 的 cost 之和
-- costBreakdown 中各项费用必须严格等于上述聚合结果，保持前后数据一致
-- costBreakdown 中各项费用总花费不能超过用户预算，但应该接近预算的80-95%
-
-3.1 真实世界价格约束（极其重要）：
-- activities 内每一项的 cost 必须尽量采用“现实世界真实价格”，而非随意估算。
-- 对于景点（category=attraction），优先使用真实门票价（如“明孝陵”按旺/淡季官方价格给出，币种统一为人民币）。
-- 对于餐饮（category=restaurant），按该城市当前常见消费水平选择具体餐厅与人均价格（给出合计价）。
-- 对于交通（category=transportation），根据里程与交通方式估算接近真实的价格（地铁/公交按当地票价区间，打车按起步价+里程单价，火车/高铁按二等座常见票价区间）。
-- 对于住宿（category=accommodation），选择与偏好匹配的真实/常见价位酒店或民宿，给出每晚含税总价。
-- 若确实无法确定某项精确价格，请给出“本地常见价”并在活动的 description 中注明“价格为估算值，可能随季节/活动变动”。
+- costBreakdown中的各项费用必须与itinerary中所有活动的cost总和相匹配
+- 总花费不能超过用户预算，但应该接近预算的80-95%（重要）
 
 4. 日期要求（重要）：
 - 出发日期必须是未来日期，不能是今天或过去的日期

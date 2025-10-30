@@ -53,7 +53,7 @@
               <div class="voice-wave"></div>
               <div class="voice-wave"></div>
             </div>
-            <span class="voice-text">正在录制语音...</span>
+            <span class="voice-text">📝正在录制语音...</span>
           </div>
           
           <!-- 识别状态显示 -->
@@ -63,7 +63,7 @@
               <div class="processing-dot"></div>
               <div class="processing-dot"></div>
             </div>
-            <span class="processing-text">{{ isRecording ? '正在识别语音...' : '正在生成旅行计划...' }}</span>
+            <span class="processing-text">{{ isRecording ? '🎤正在识别语音...' : '🚀正在生成旅行计划,请耐心等待几分钟...' }}</span>
           </div>
           
           <!-- 错误信息显示 -->
