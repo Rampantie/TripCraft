@@ -336,6 +336,9 @@ ${personalizedDescription}
           "title": "活动标题",
           "description": "简短描述",
           "duration": "持续时间",
+          "category": "活动类别(transportation|accommodation|attraction|restaurant|other)",
+          "place": "地点/名称",
+          "address": "地址(可选)",
           "cost": 花费(数字)
         }
       ]
@@ -355,10 +358,17 @@ ${personalizedDescription}
 - 行程安排要符合用户的旅行节奏偏好
 - 住宿推荐要符合用户的住宿偏好
 - 交通方式要符合用户的交通偏好
-- 每天安排3-5个活动（根据旅行节奏调整）
-- 每个活动包含时间、地点、简短描述、花费
+- 每天安排3-6个活动（根据旅行节奏调整）
+- 每个活动包含时间、地点、简短描述、花费、category分类
 - 时间安排要合理，考虑交通时间
 - 活动要符合目的地特色
+
+2.1 每日必含信息（重要）：
+- 每天的 activities 中必须至少包含以下类别各≥1条：
+  * transportation（交通：到达/离开/市内移动等）
+  * accommodation（住宿：入住/续住/退房等）
+  * attraction（景点/活动/项目等）
+  * restaurant（餐饮：早餐/午餐/晚餐/特色小吃等）
 
 3. 费用计算要求（重要）：
 - 每个活动的cost字段必须反映实际花费
@@ -377,7 +387,13 @@ ${personalizedDescription}
 - 门票费用要根据景点类型：
   * 人文景点：博物馆20-100元，历史建筑30-150元，艺术展览50-200元
   * 自然景点：公园10-50元，自然保护区50-200元，主题公园200-500元
-- costBreakdown中的各项费用必须与itinerary中所有活动的cost总和相匹配
+- 所有费用从 activities 的 cost 字段汇总得到，按 category 分类聚合：
+  * accommodation = 所有 category=accommodation 的 cost 之和
+  * transportation = 所有 category=transportation 的 cost 之和
+  * food = 所有 category=restaurant 的 cost 之和
+  * tickets = 所有 category=attraction 的 cost 之和（若含付费活动/门票）
+  * others = 所有 category=other 的 cost 之和
+- costBreakdown 中各项费用必须严格等于上述聚合结果，保持前后数据一致
 - 总花费不能超过用户预算，但应该接近预算的80-95%
 
 4. 日期要求（重要）：
