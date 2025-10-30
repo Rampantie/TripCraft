@@ -140,7 +140,7 @@ app.post('/api/generate-trip-plan', async (req, res) => {
 
     // 调用阿里云百炼API（同步调用）
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+    const timeoutId = setTimeout(() => controller.abort(), 180000); // 180秒超时
     
     const response = await fetch('https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation', {
       method: 'POST',
@@ -394,7 +394,7 @@ ${personalizedDescription}
   * tickets = 所有 category=attraction 的 cost 之和（若含付费活动/门票）
   * others = 所有 category=other 的 cost 之和
 - costBreakdown 中各项费用必须严格等于上述聚合结果，保持前后数据一致
-- 总花费不能超过用户预算，但应该接近预算的80-95%
+- costBreakdown 中各项费用总花费不能超过用户预算，但应该接近预算的80-95%
 
 3.1 真实世界价格约束（极其重要）：
 - activities 内每一项的 cost 必须尽量采用“现实世界真实价格”，而非随意估算。
