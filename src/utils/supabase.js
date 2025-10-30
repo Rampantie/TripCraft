@@ -7,8 +7,8 @@ import { createClient } from '@supabase/supabase-js';
 
 // Supabase 配置
 // Vue CLI 使用 process.env 而不是 import.meta.env
-const supabaseUrl = process.env.VUE_APP_SUPABASE_URL || 'https://ioqqsydayblyodbrgzmb.supabase.co';
-const supabaseAnonKey = process.env.VUE_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlvcXFzeWRheWJseW9kYnJnem1iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjExNjE4NzIsImV4cCI6MjA3NjczNzg3Mn0.CoIxtBTTYVMmxWpmZurv2GhfWc-3Xb8jbNn1K94kf54';
+const supabaseUrl = process.env.VUE_APP_SUPABASE_URL;
+const supabaseAnonKey = process.env.VUE_APP_SUPABASE_ANON_KEY;
 
 // 验证配置
 console.log('Supabase URL:', supabaseUrl);
