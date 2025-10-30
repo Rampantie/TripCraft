@@ -52,6 +52,7 @@
 ### 👤 用户管理与数据存储
 - **认证与资料**：基于 Supabase 进行注册/登录（用户名可修改，带美观提示）。
 - **计划存储**：旅行计划保存用户数据库中。
+- **偏好存储**：用户可以编辑自己的旅行偏好，生成旅行计划时会参考用户的偏好设置。
 - **实时统计**：导航栏/个人主页展示用户的总计划数、已完成计划数、总花费（完成计划的实际花费之和）。
 - **数据一致性**：完成计划时同步更新计划日期与花费和行程一致，确保前后端展示一致。
 
@@ -84,7 +85,14 @@ TripCraft/
 
 **注：请在本地的Docker上运行，云端服务器运行时可能因为带宽原因前端页面无法展示。**
 
-### 1) 拉取并运行镜像 🐳
+### 拉取并运行镜像 🐳
+
+如果提示拉取镜像需要登陆（`docker login`）则需要运行：
+
+```bash
+docker login crpi-38knp31niny4x869.cn-heyuan.personal.cr.aliyuncs.com
+```
+
 #### 后端（Node）🧠
 ```bash
 docker run -d -p 3001:3001 --name tripcraft-backend crpi-38knp31niny4x869.cn-heyuan.personal.cr.aliyuncs.com/tripcraft/tripcraft-backend:latest
