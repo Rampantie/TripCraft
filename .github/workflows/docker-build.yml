@@ -16,6 +16,7 @@ jobs:
       VUE_APP_XUNFEI_API_KEY: ${{ secrets.VUE_APP_XUNFEI_API_KEY }}
       VUE_APP_SUPABASE_URL: ${{ secrets.VUE_APP_SUPABASE_URL }}
       VUE_APP_SUPABASE_ANON_KEY: ${{ secrets.VUE_APP_SUPABASE_ANON_KEY }}
+      BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
     strategy:
       matrix:
         service: [ frontend, backend ]
@@ -72,4 +73,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VUE_APP_XUNFEI_APP_ID=${{ secrets.VUE_APP_XUNFEI_APP_ID }}
+            VUE_APP_XUNFEI_API_SECRET=${{ secrets.VUE_APP_XUNFEI_API_SECRET }}
+            VUE_APP_XUNFEI_API_KEY=${{ secrets.VUE_APP_XUNFEI_API_KEY }}
+            VUE_APP_SUPABASE_URL=${{ secrets.VUE_APP_SUPABASE_URL }}
+            VUE_APP_SUPABASE_ANON_KEY=${{ secrets.VUE_APP_SUPABASE_ANON_KEY }}
+            BAILIAN_API_KEY=${{ secrets.BAILIAN_API_KEY }}
 
