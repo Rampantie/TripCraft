@@ -96,7 +96,7 @@
 
             <!-- 费用统计 -->
             <div class="cost-breakdown">
-              <h3 class="section-title">费用明细</h3>
+              <h3 class="section-title">费用估计</h3>
               <div class="cost-list">
                 <div class="cost-item">
                   <span class="cost-label">住宿费用</span>
