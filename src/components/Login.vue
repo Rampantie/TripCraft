@@ -13,15 +13,17 @@
               <p class="login-subtitle">请登录您的账户</p>
             </div>
             
-            <form @submit.prevent="handleLogin" class="login-form">
+            <form @submit.prevent="handleLogin" ref="loginForm" class="login-form" autocomplete="off">
               <div class="form-group">
                 <label for="email" class="form-label">邮箱</label>
                 <input 
                   id="email"
+                  ref="emailInput"
                   v-model="loginForm.email"
                   type="email"
                   class="form-input"
                   placeholder="请输入邮箱地址"
+                  autocomplete="off"
                   required
                 />
               </div>
@@ -30,10 +32,12 @@
                 <label for="password" class="form-label">密码</label>
                 <input 
                   id="password"
+                  ref="passwordInput"
                   v-model="loginForm.password"
                   type="password"
                   class="form-input"
                   placeholder="请输入密码"
+                  autocomplete="new-password"
                   required
                 />
               </div>
@@ -107,21 +111,53 @@ export default {
       successMessage: ''
     }
   },
+  beforeRouteEnter(to, from, next) {
+    // 在进入路由前清除表单（在组件实例创建之前）
+    next(vm => {
+      vm.clearForm();
+    });
+  },
+  beforeRouteUpdate(to, from, next) {
+    // 当路由参数或查询参数变化时
+    if (to.name === 'Login') {
+      this.clearForm();
+    }
+    next();
+  },
   watch: {
     // 监听路由变化，确保每次进入登录页时清除表单数据
     '$route'(to, from) {
       if (to.name === 'Login') {
-        this.clearForm();
+        // 使用nextTick确保DOM已更新后再清除
+        this.$nextTick(() => {
+          this.clearForm();
+        });
       }
     }
   },
   mounted() {
     // 进入登录页时清除表单数据
     this.clearForm();
+    // 延迟再次清除，防止浏览器自动填充覆盖
+    setTimeout(() => {
+      this.clearForm();
+    }, 100);
+    // 再次延迟清除，确保清除浏览器自动填充
+    setTimeout(() => {
+      this.clearForm();
+    }, 500);
   },
   activated() {
     // 如果使用了keep-alive，在激活时也清除表单数据
     this.clearForm();
+    // 延迟再次清除，防止浏览器自动填充覆盖
+    setTimeout(() => {
+      this.clearForm();
+    }, 100);
+    // 再次延迟清除，确保清除浏览器自动填充
+    setTimeout(() => {
+      this.clearForm();
+    }, 500);
   },
   computed: {
     isFormValid() {
@@ -130,11 +166,58 @@ export default {
   },
   methods: {
     clearForm() {
-      // 清除登录表单数据
+      // 首先清除响应式数据
       this.loginForm.email = '';
       this.loginForm.password = '';
       this.errorMessage = '';
       this.successMessage = '';
+      
+      // 使用nextTick确保DOM已更新后再操作
+      this.$nextTick(() => {
+        // 直接操作DOM元素清除值
+        const emailInput = this.$refs.emailInput;
+        const passwordInput = this.$refs.passwordInput;
+        const formElement = this.$refs.loginForm;
+        
+        if (emailInput) {
+          emailInput.value = '';
+          // 使用多种方式触发更新，确保v-model同步
+          emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+          emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+          // 清除浏览器的自动填充
+          emailInput.setAttribute('value', '');
+        }
+        
+        if (passwordInput) {
+          passwordInput.value = '';
+          // 使用多种方式触发更新，确保v-model同步
+          passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+          passwordInput.dispatchEvent(new Event('change', { bubbles: true }));
+          // 清除浏览器的自动填充
+          passwordInput.setAttribute('value', '');
+        }
+        
+        // 重置表单（这也会清除浏览器的自动填充）
+        if (formElement) {
+          try {
+            formElement.reset();
+            // 重置后再次确保值为空（因为reset可能会恢复浏览器缓存的值）
+            this.loginForm.email = '';
+            this.loginForm.password = '';
+            if (emailInput) {
+              emailInput.value = '';
+            }
+            if (passwordInput) {
+              passwordInput.value = '';
+            }
+          } catch (e) {
+            console.warn('重置表单失败:', e);
+          }
+        }
+        
+        // 确保响应式数据已更新（Vue 3 不再需要 $forceUpdate）
+        // 通过直接赋值和DOM操作已经确保数据同步
+      });
     },
     async handleLogin() {
       if (!this.isFormValid) return;
