@@ -63,6 +63,35 @@
                         <span class="activity-duration">{{ activity.duration }}</span>
                         <span class="activity-cost">¥{{ activity.cost }}</span>
                       </div>
+                      <div 
+                        v-if="activity.latitude && activity.longitude" 
+                        class="activity-route-controls"
+                      >
+                        <button
+                          class="route-btn route-btn-origin"
+                          :class="{ 'active': isSelectedAsOrigin(day, actIndex) }"
+                          @click.stop="setAsOrigin(day, actIndex)"
+                          :title="isSelectedAsOrigin(day, actIndex) ? '已设为起点' : '设为起点'"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                            <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                          </svg>
+                          起点
+                        </button>
+                        <button
+                          class="route-btn route-btn-destination"
+                          :class="{ 'active': isSelectedAsDestination(day, actIndex) }"
+                          @click.stop="setAsDestination(day, actIndex)"
+                          :title="isSelectedAsDestination(day, actIndex) ? '已设为终点' : '设为终点'"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M21 10C21 17 12 23 12 23C12 23 3 17 3 10C3 5.02944 7.02944 1 12 1C16.9706 1 21 5.02944 21 10Z" stroke="currentColor" stroke-width="2"/>
+                            <circle cx="12" cy="10" r="3" fill="currentColor"/>
+                          </svg>
+                          终点
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -77,20 +106,43 @@
               <div class="map-header">
                 <h3 class="section-title">城市地图</h3>
                 <div class="map-controls">
-        <button 
-          v-if="planId && isReadOnly && planStatus !== 'completed'"
-          class="btn-primary"
-          @click="openCompleteModal"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          完成旅行
-        </button>
+                  <button
+                    v-if="selectedOrigin && selectedDestination"
+                    class="btn-primary"
+                    :disabled="isNavigating"
+                    @click="showNavigationRoute"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    {{ isNavigating ? '规划路线中...' : '规划路线' }}
+                  </button>
+                  <button 
+                    v-if="planId && isReadOnly && planStatus !== 'completed'"
+                    class="btn-primary"
+                    @click="openCompleteModal"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    完成旅行
+                  </button>
+                </div>
+              </div>
+              <div v-if="selectedOrigin || selectedDestination" class="route-selection-info">
+                <div v-if="selectedOrigin" class="route-selection-item">
+                  <span class="route-label route-label-origin">起点：</span>
+                  <span class="route-value">{{ getActivityDisplay(selectedOrigin) }}</span>
+                  <button class="route-clear-btn" @click="clearOrigin" title="清除起点">×</button>
+                </div>
+                <div v-if="selectedDestination" class="route-selection-item">
+                  <span class="route-label route-label-destination">终点：</span>
+                  <span class="route-value">{{ getActivityDisplay(selectedDestination) }}</span>
+                  <button class="route-clear-btn" @click="clearDestination" title="清除终点">×</button>
                 </div>
               </div>
               <div class="map-content">
-                <div ref="leafletMap" class="leaflet-map"></div>
+                <div ref="baiduMap" class="baidu-map"></div>
               </div>
             </div>
 
@@ -203,11 +255,6 @@
 import Navbar from './Navbar.vue';
 import Modal from './Modal.vue';
 import supabase from '../utils/supabase.js';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
-import iconUrl from 'leaflet/dist/images/marker-icon.png';
-import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
 export default {
   name: 'TripPlanning',
@@ -230,10 +277,16 @@ export default {
       completeDate: '',
       selectedDay: 0,
       mapView: 'route',
-      leaflet: {
-        map: null,
-        markers: []
-      },
+      baiduMap: null,
+      baiduMarkers: [],
+      selectedOrigin: null, // { dayIndex, activityIndex, activity }
+      selectedDestination: null, // { dayIndex, activityIndex, activity }
+      isNavigating: false,
+      navigationRoute: null,
+      trackAnimation: null,
+      animationMarker: null,
+      routeStartMarker: null, // 路线起点标记
+      routeEndMarker: null, // 路线终点标记
       tripDetails: {
         destination: '日本东京、京都、大阪',
         startDate: '2024-04-01',
@@ -364,7 +417,10 @@ export default {
       // 新建流程：从 sessionStorage 加载
       this.loadTripData();
     }
-    this.$nextTick(() => this.initLeaflet());
+    // 等待百度地图脚本加载完成
+    this.$nextTick(() => {
+      this.initBaiduMap();
+    });
   },
   methods: {
     async loadPlanById(id) {
@@ -403,6 +459,10 @@ export default {
 
         // 基于行程更新地图点
         this.updateMapPoints();
+        // 刷新百度地图标记
+        this.$nextTick(() => {
+          this.refreshBaiduMarkers();
+        });
         console.log('✅ [旅行计划页] 已加载计划');
       } catch (e) {
         console.error('❌ [旅行计划页] 加载计划失败:', e);
@@ -469,6 +529,10 @@ export default {
           
           // 更新地图点（基于行程生成）
           this.updateMapPoints();
+          // 刷新百度地图标记
+          this.$nextTick(() => {
+            this.refreshBaiduMarkers();
+          });
           
           console.log('🎯 [旅行计划页] 旅行计划加载完成');
           
@@ -504,128 +568,592 @@ export default {
       
       this.mapPoints = points;
       console.log('🗺️ [旅行计划页] 地图点已更新:', points);
-      this.$nextTick(() => this.refreshLeafletMarkers());
+      this.$nextTick(() => this.refreshBaiduMarkers());
     },
     
     getPointColor(activityIndex) {
       const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
       return colors[activityIndex % colors.length];
     },
-    initLeaflet() {
+    initBaiduMap() {
       try {
-        const el = this.$refs.leafletMap;
-        if (!el) return;
-        if (this.leaflet.map) {
-          this.leaflet.map.remove();
+        // 等待百度地图 API 加载完成
+        if (typeof window.BMapGL === 'undefined' && typeof window.BMap === 'undefined') {
+          console.warn('百度地图 API 未加载，等待加载...');
+          setTimeout(() => this.initBaiduMap(), 500);
+          return;
         }
-        // 修复打包后默认图标404问题
-        L.Icon.Default.mergeOptions({
-          iconRetinaUrl,
-          iconUrl,
-          shadowUrl
+        
+        // 如果没有 BMapGL，使用 BMap（普通版本）
+        if (typeof window.BMapGL === 'undefined' && window.BMap) {
+          window.BMapGL = window.BMap;
+          console.log('ℹ️ 使用 BMap 作为 BMapGL');
+        }
+
+        const el = this.$refs.baiduMap;
+        if (!el) {
+          console.warn('地图容器元素不存在');
+          return;
+        }
+
+        // 如果已有地图实例，先销毁
+        if (this.baiduMap) {
+          try {
+            this.baiduMap = null;
+          } catch (e) {
+            console.warn('销毁旧地图实例失败:', e);
+          }
+        }
+
+        console.log('🗺️ 开始初始化百度地图...');
+        
+        // 默认中心设为北京
+        const defaultCenter = new window.BMapGL.Point(116.4074, 39.9042);
+        this.baiduMap = new window.BMapGL.Map(el, {
+          enableMapClick: true
         });
-        // 默认中心先放北京，后续根据点集适配
-        this.leaflet.map = L.map(el).setView([39.9042, 116.4074], 5);
-        const baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          maxZoom: 19,
-          attribution: '© OpenStreetMap contributors'
-        });
-        baseLayer.on('tileerror', () => {
-          // 发生错误时切换到备用瓦片源
-          L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-            attribution: '© OpenStreetMap contributors, Tiles style by HOT'
-          }).addTo(this.leaflet.map);
-        });
-        baseLayer.addTo(this.leaflet.map);
-        this.refreshLeafletMarkers();
-        setTimeout(() => this.leaflet.map.invalidateSize(), 0);
+        
+        // 初始化地图，设置中心点和缩放级别
+        this.baiduMap.centerAndZoom(defaultCenter, 5);
+        
+        // 启用滚轮缩放
+        this.baiduMap.enableScrollWheelZoom(true);
+        
+        // 添加地图控件
+        const navCtrl = new window.BMapGL.NavigationControl();
+        this.baiduMap.addControl(navCtrl);
+        
+        const scaleCtrl = new window.BMapGL.ScaleControl();
+        this.baiduMap.addControl(scaleCtrl);
+
+        console.log('✅ 百度地图初始化成功');
+        
+        // 刷新标记
+        this.refreshBaiduMarkers();
       } catch (e) {
-        console.error('Leaflet 初始化失败:', e);
+        console.error('❌ 百度地图初始化失败:', e);
+        this.showMessage(`百度地图初始化失败: ${e.message}`, 'danger');
       }
     },
-    async refreshLeafletMarkers() {
-      if (!this.leaflet.map) return;
-      // 清理旧标记
-      this.leaflet.markers.forEach(m => m.remove());
-      this.leaflet.markers = [];
+    async refreshBaiduMarkers() {
+      if (!this.baiduMap || typeof window.BMapGL === 'undefined') {
+        console.warn('地图实例或 BMapGL 未就绪，跳过标记刷新');
+        return;
+      }
 
-      const bounds = L.latLngBounds([]);
+      // 清理旧标记
+      this.baiduMarkers.forEach(marker => {
+        this.baiduMap.removeOverlay(marker);
+      });
+      this.baiduMarkers = [];
 
       // 优先使用 tripDetails 中的经纬度
       const lat = Number(this.tripDetails.latitude);
       const lng = Number(this.tripDetails.longitude);
+      
       if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        const coord = [lat, lng];
-        const marker = L.marker(coord).addTo(this.leaflet.map)
-          .bindPopup(`<b>${this.tripDetails.destination || '目的地'}</b><br/>旅行目的地`);
-        this.leaflet.markers.push(marker);
-        bounds.extend(coord);
-      }
-
-      // 若无经纬度，则回退到目的地名称地理编码（仅取第一个城市，降低限流风险）
-      if (!bounds.isValid()) {
-        const cities = this.extractCitiesFromDestination().slice(0, 1);
-        const results = await Promise.all(cities.map(async (city) => {
-          const coord = await this.geocodeCity(city);
-          return { city, coord };
-        }));
-
-        results.forEach(({ city, coord }) => {
-          if (coord) {
-            const marker = L.marker(coord).addTo(this.leaflet.map)
-              .bindPopup(`<b>${city}</b><br/>旅行目的地`);
-            this.leaflet.markers.push(marker);
-            bounds.extend(coord);
-          }
+        // 百度地图使用 BD09 坐标系，如果传入的是 WGS84 坐标，需要转换
+        // 但通常 AI 返回的坐标可能需要转换，这里先直接使用
+        // 注意：百度地图的坐标顺序是 [经度, 纬度]
+        const point = new window.BMapGL.Point(lng, lat);
+        
+        // 创建标记
+        const marker = new window.BMapGL.Marker(point);
+        this.baiduMap.addOverlay(marker);
+        
+        // 创建信息窗口
+        const infoWindow = new window.BMapGL.InfoWindow(
+          `<div style="padding: 10px;">
+            <strong>${this.tripDetails.destination || '目的地'}</strong><br/>
+            旅行目的地
+          </div>`,
+          { width: 200, height: 80 }
+        );
+        
+        // 点击标记显示信息窗口
+        marker.addEventListener('click', () => {
+          this.baiduMap.openInfoWindow(infoWindow, point);
         });
-      }
-
-      if (bounds.isValid()) {
-        this.leaflet.map.fitBounds(bounds.pad(0.2));
+        
+        this.baiduMarkers.push(marker);
+        
+        // 调整地图视野以包含标记点
+        this.baiduMap.centerAndZoom(point, 10);
       } else {
-        this.leaflet.map.setView([39.9042, 116.4074], 5);
+        // 若无经纬度，尝试使用百度地图的地理编码服务
+        const destination = this.tripDetails.destination || '';
+        if (destination) {
+          await this.geocodeBaidu(destination);
+        }
       }
     },
-
-    extractCitiesFromDestination() {
-      const destination = (this.tripDetails.destination || '').trim();
-      if (!destination) return [];
-      // 以常见分隔符拆分：中文顿号/逗号、英文逗号、斜杠、竖线、空格等
-      const parts = destination.split(/[、，,\/|\-\s]+/).map(s => s.trim()).filter(Boolean);
-      // 去重
-      const unique = Array.from(new Set(parts));
-      // 最多取前5个，避免触发地理编码限流
-      return unique.slice(0, 5);
+    // 起点和终点选择相关方法
+    setAsOrigin(day, activityIndex) {
+      const dayIndex = this.itinerary.indexOf(day);
+      const activity = day.activities[activityIndex];
+      
+      if (!activity.latitude || !activity.longitude) {
+        this.showMessage('该活动没有经纬度信息', 'warning');
+        return;
+      }
+      
+      this.selectedOrigin = {
+        dayIndex,
+        activityIndex,
+        activity: { ...activity }
+      };
+      
+      // 如果选中的是当前终点，清除终点
+      if (this.selectedDestination && 
+          this.selectedDestination.dayIndex === dayIndex && 
+          this.selectedDestination.activityIndex === activityIndex) {
+        this.selectedDestination = null;
+      }
+      
+      // 清除之前的路线
+      this.clearNavigationRoute();
+      
+      this.showMessage(`已将"${activity.title}"设为起点`, 'success');
     },
+    setAsDestination(day, activityIndex) {
+      const dayIndex = this.itinerary.indexOf(day);
+      const activity = day.activities[activityIndex];
+      
+      if (!activity.latitude || !activity.longitude) {
+        this.showMessage('该活动没有经纬度信息', 'warning');
+        return;
+      }
+      
+      this.selectedDestination = {
+        dayIndex,
+        activityIndex,
+        activity: { ...activity }
+      };
+      
+      // 如果选中的是当前起点，清除起点
+      if (this.selectedOrigin && 
+          this.selectedOrigin.dayIndex === dayIndex && 
+          this.selectedOrigin.activityIndex === activityIndex) {
+        this.selectedOrigin = null;
+      }
+      
+      // 清除之前的路线
+      this.clearNavigationRoute();
+      
+      this.showMessage(`已将"${activity.title}"设为终点`, 'success');
+    },
+    clearOrigin() {
+      this.selectedOrigin = null;
+      this.clearNavigationRoute();
+      this.showMessage('已清除起点', 'info');
+    },
+    clearDestination() {
+      this.selectedDestination = null;
+      this.clearNavigationRoute();
+      this.showMessage('已清除终点', 'info');
+    },
+    isSelectedAsOrigin(day, activityIndex) {
+      if (!this.selectedOrigin) return false;
+      const dayIndex = this.itinerary.indexOf(day);
+      return this.selectedOrigin.dayIndex === dayIndex && 
+             this.selectedOrigin.activityIndex === activityIndex;
+    },
+    isSelectedAsDestination(day, activityIndex) {
+      if (!this.selectedDestination) return false;
+      const dayIndex = this.itinerary.indexOf(day);
+      return this.selectedDestination.dayIndex === dayIndex && 
+             this.selectedDestination.activityIndex === activityIndex;
+    },
+    getActivityDisplay(selection) {
+      if (!selection || !selection.activity) return '';
+      return `${selection.activity.time} ${selection.activity.title}`;
+    },
+    async showNavigationRoute() {
+      if (!this.selectedOrigin || !this.selectedDestination) {
+        this.showMessage('请先选择起点和终点', 'warning');
+        return;
+      }
 
-    async geocodeCity(name) {
+      if (!this.baiduMap || typeof window.BMapGL === 'undefined') {
+        this.showMessage('地图未初始化，请稍后再试', 'danger');
+        return;
+      }
+
+      this.isNavigating = true;
+
       try {
-        if (!this._geoCache) this._geoCache = {};
-        if (this._geoCache[name]) return this._geoCache[name];
-        // 使用 OpenStreetMap Nominatim 公共地理编码服务（有速率限制，请勿高频调用）
-        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=0&accept-language=zh-CN&q=${encodeURIComponent(name)}`;
-        const resp = await fetch(url, { 
-          headers: { 
-            'Accept': 'application/json',
-            'User-Agent': 'TripCraft/1.0 (tripcraft-app)'
-          } 
-        });
-        if (!resp.ok) return null;
-        const json = await resp.json();
-        if (Array.isArray(json) && json.length > 0) {
-          const lat = parseFloat(json[0].lat);
-          const lon = parseFloat(json[0].lon);
-          if (Number.isFinite(lat) && Number.isFinite(lon)) {
-            const coord = [lat, lon];
-            this._geoCache[name] = coord;
-            return coord;
+        // 先清除之前的路线
+        this.clearNavigationRoute();
+
+        // 使用选中活动的经纬度
+        const originPoint = new window.BMapGL.Point(
+          this.selectedOrigin.activity.longitude,
+          this.selectedOrigin.activity.latitude
+        );
+        const destinationPoint = new window.BMapGL.Point(
+          this.selectedDestination.activity.longitude,
+          this.selectedDestination.activity.latitude
+        );
+
+        console.log('✅ 使用活动坐标:', {
+          origin: { 
+            lat: this.selectedOrigin.activity.latitude, 
+            lng: this.selectedOrigin.activity.longitude,
+            title: this.selectedOrigin.activity.title
+          },
+          destination: { 
+            lat: this.selectedDestination.activity.latitude, 
+            lng: this.selectedDestination.activity.longitude,
+            title: this.selectedDestination.activity.title
           }
+        });
+        
+        // 验证坐标是否在中国境内（粗略判断）
+        const isInChina = (lng, lat) => {
+          // 中国大致范围：经度 73-135，纬度 18-54
+          return lng >= 73 && lng <= 135 && lat >= 18 && lat <= 54;
+        };
+        
+        const originInChina = isInChina(this.selectedOrigin.activity.longitude, this.selectedOrigin.activity.latitude);
+        const destInChina = isInChina(this.selectedDestination.activity.longitude, this.selectedDestination.activity.latitude);
+        
+        if (!originInChina || !destInChina) {
+          console.warn('⚠️ 警告：起点或终点可能不在中国境内');
+          console.log('起点在中国境内:', originInChina, '终点在中国境内:', destInChina);
+          this.showMessage('提示：百度地图路线规划主要支持中国境内。如果起点或终点在国外，可能无法规划详细路线。', 'warning');
         }
-        return null;
+
+        // 创建起点和终点标记
+        const startIcon = new window.BMapGL.Icon(
+          'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#10b981" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="6" fill="#fff"/></svg>'),
+          new window.BMapGL.Size(32, 32)
+        );
+        const endIcon = new window.BMapGL.Icon(
+          'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#ef4444" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="6" fill="#fff"/></svg>'),
+          new window.BMapGL.Size(32, 32)
+        );
+        
+        const startMarker = new window.BMapGL.Marker(originPoint, { icon: startIcon });
+        const endMarker = new window.BMapGL.Marker(destinationPoint, { icon: endIcon });
+
+        this.baiduMap.addOverlay(startMarker);
+        this.baiduMap.addOverlay(endMarker);
+        // 保存标记引用以便清除
+        this.routeStartMarker = startMarker;
+        this.routeEndMarker = endMarker;
+
+        // 创建起点和终点的信息窗口
+        const startInfoWindow = new window.BMapGL.InfoWindow(
+          `<div style="padding: 10px;"><strong>起点</strong><br/>${this.selectedOrigin.activity.title}</div>`,
+          { width: 200, height: 80 }
+        );
+        const endInfoWindow = new window.BMapGL.InfoWindow(
+          `<div style="padding: 10px;"><strong>终点</strong><br/>${this.selectedDestination.activity.title}</div>`,
+          { width: 200, height: 80 }
+        );
+
+        startMarker.addEventListener('click', () => {
+          this.baiduMap.openInfoWindow(startInfoWindow, originPoint);
+        });
+        endMarker.addEventListener('click', () => {
+          this.baiduMap.openInfoWindow(endInfoWindow, destinationPoint);
+        });
+
+        // 路线规划：使用驾车路线规划
+        // 注意：百度地图路线规划主要支持中国境内，国外地址可能无法规划路线
+        const driving = new window.BMapGL.DrivingRoute(this.baiduMap, {
+          renderOptions: {
+            map: this.baiduMap,
+            autoViewport: true,
+            showMarkers: false // 我们已经手动添加了标记
+          },
+          onSearchComplete: (results) => {
+            const status = driving.getStatus();
+            console.log('路线规划状态:', status);
+            console.log('路线规划结果:', results);
+            
+            // 百度地图状态码：0或BMAP_STATUS_SUCCESS表示成功
+            // 状态码说明：
+            // 0 - 检索成功
+            // 1 - 检索失败：服务器内部错误
+            // 2 - 检索失败：起点或终点坐标非法
+            // 3 - 检索失败：起点或终点不在中国境内
+            // 4 - 检索失败：起点或终点附近没有找到道路
+            // 5 - 检索失败：检索无结果
+            // 6 - 检索失败：检索超时
+            const statusMessages = {
+              0: '路线规划成功',
+              1: '服务器内部错误',
+              2: '起点或终点坐标非法',
+              3: '起点或终点不在中国境内（百度地图路线规划主要支持中国境内）',
+              4: '起点或终点附近没有找到道路',
+              5: '检索无结果，可能起点终点距离过远或无法到达',
+              6: '检索超时'
+            };
+            
+            const statusText = statusMessages[status] || `未知错误（状态码：${status}）`;
+            console.log('状态说明:', statusText);
+            
+            // 检查状态：0 表示成功
+            if (status === 0) {
+              try {
+                const plan = results.getPlan(0);
+                if (!plan) {
+                  throw new Error('无法获取路线规划结果');
+                }
+                
+                const route = plan.getRoute(0);
+                if (!route) {
+                  throw new Error('无法获取路线');
+                }
+                
+                // 获取路线路径点
+                const path = [];
+                
+                // 尝试方法1：直接使用 route.getPoints() 获取所有路径点
+                try {
+                  if (route.getPoints && typeof route.getPoints === 'function') {
+                    const routePoints = route.getPoints();
+                    if (routePoints && routePoints.length > 0) {
+                      for (let i = 0; i < routePoints.length; i++) {
+                        path.push(routePoints[i]);
+                      }
+                      console.log('✅ 使用方法1 (getPoints) 获取路径点:', path.length);
+                    }
+                  }
+                } catch (e) {
+                  console.warn('方法1失败:', e);
+                }
+                
+                // 尝试方法2：遍历步骤获取路径点
+                if (path.length === 0 && route.getNumSteps) {
+                  try {
+                    const numSteps = route.getNumSteps();
+                    for (let i = 0; i < numSteps; i++) {
+                      const step = route.getStep(i);
+                      if (step) {
+                        let stepPoints = null;
+                        
+                        if (step.getPoints && typeof step.getPoints === 'function') {
+                          stepPoints = step.getPoints();
+                        } 
+                        else if (step.points && Array.isArray(step.points)) {
+                          stepPoints = step.points;
+                        }
+                        else if (step.path && Array.isArray(step.path)) {
+                          stepPoints = step.path;
+                        }
+                        
+                        if (stepPoints && stepPoints.length > 0) {
+                          for (let j = 0; j < stepPoints.length; j++) {
+                            path.push(stepPoints[j]);
+                          }
+                        }
+                      }
+                    }
+                    if (path.length > 0) {
+                      console.log('✅ 使用方法2 (遍历步骤) 获取路径点:', path.length);
+                    }
+                  } catch (e) {
+                    console.error('方法2失败:', e);
+                  }
+                }
+                
+                // 如果还是没有路径点，使用起点和终点作为直线路径
+                if (path.length === 0) {
+                  console.warn('⚠️ 无法获取详细路径点，使用起点和终点绘制直线');
+                  path.push(originPoint);
+                  path.push(destinationPoint);
+                }
+
+                // 绘制路线
+                const polyline = new window.BMapGL.Polyline(path, {
+                  strokeColor: '#3388ff',
+                  strokeWeight: 6,
+                  strokeOpacity: 0.8
+                });
+                this.baiduMap.addOverlay(polyline);
+                this.navigationRoute = polyline;
+
+                // 调整地图视野以包含整条路线
+                const points = [originPoint, destinationPoint];
+                const viewport = this.baiduMap.getViewport(points, {
+                  margins: [50, 50, 50, 50]
+                });
+                this.baiduMap.centerAndZoom(viewport.center, viewport.zoom);
+
+                // 创建轨迹动画（如果有足够的路径点）
+                if (path.length > 2) {
+                  this.createTrackAnimation(path);
+                }
+
+                this.showMessage('路线规划成功', 'success');
+              } catch (error) {
+                console.error('处理路线规划结果失败:', error);
+                this.showMessage('路线规划成功，但无法显示详细路线', 'warning');
+              }
+            } else {
+              console.error('路线规划失败，状态码:', status);
+              const errorMsg = status === 5 
+                ? '路线规划失败：检索无结果。百度地图路线规划主要支持中国境内，如果起点或终点在国外，可能无法规划路线。您可以尝试使用直线连接查看大致位置。'
+                : `路线规划失败：${statusMessages[status] || `状态码 ${status}`}`;
+              this.showMessage(errorMsg, 'danger');
+              
+              // 即使路线规划失败，也显示起点和终点之间的直线连接
+              if (status === 5 || status === 3) {
+                console.log('尝试绘制起点和终点之间的直线连接');
+                const straightPath = [originPoint, destinationPoint];
+                const polyline = new window.BMapGL.Polyline(straightPath, {
+                  strokeColor: '#ff9800',
+                  strokeWeight: 4,
+                  strokeOpacity: 0.6,
+                  strokeStyle: 'dashed' // 虚线表示这不是实际路线
+                });
+                this.baiduMap.addOverlay(polyline);
+                this.navigationRoute = polyline;
+                this.showMessage('已显示起点和终点之间的直线连接（虚线），仅供参考', 'warning');
+              }
+            }
+            this.isNavigating = false;
+          }
+        });
+
+        // 搜索路线
+        driving.search(originPoint, destinationPoint);
+
+      } catch (error) {
+        console.error('❌ 显示导航路线失败:', error);
+        this.showMessage(error.message || '显示导航路线失败', 'danger');
+        this.isNavigating = false;
+      }
+    },
+    createTrackAnimation(path) {
+      if (!path || path.length === 0) return;
+
+      try {
+        // 清除之前的动画和标记
+        if (this.trackAnimation) {
+          this.trackAnimation.cancel();
+          this.trackAnimation = null;
+        }
+        if (this.animationMarker) {
+          this.baiduMap.removeOverlay(this.animationMarker);
+          this.animationMarker = null;
+        }
+
+        // 创建动画小车标记
+        const carIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="#3b82f6" d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/></svg>';
+        const carIcon = new window.BMapGL.Icon(
+          'data:image/svg+xml;base64,' + btoa(carIconSvg),
+          new window.BMapGL.Size(32, 32),
+          {
+            anchor: new window.BMapGL.Size(16, 16)
+          }
+        );
+        
+        const carMarker = new window.BMapGL.Marker(path[0], { 
+          icon: carIcon,
+          enableDragging: false
+        });
+        this.baiduMap.addOverlay(carMarker);
+        this.animationMarker = carMarker;
+
+        // 创建轨迹动画
+        this.trackAnimation = new window.BMapGL.TrackAnimation(this.baiduMap, carMarker, {
+          duration: 10000, // 动画持续时间（毫秒）
+          delay: 300, // 动画延迟
+          overallView: false, // 动画过程中是否显示整体路线
+          tilt: 30, // 地图倾斜角度
+          zoom: 15 // 地图缩放级别
+        });
+
+        // 开始动画
+        this.trackAnimation.start();
+        console.log('✅ 轨迹动画已启动');
+
+      } catch (error) {
+        console.error('❌ 创建轨迹动画失败:', error);
+      }
+    },
+    clearNavigationRoute() {
+      // 清除路线
+      if (this.navigationRoute) {
+        this.baiduMap.removeOverlay(this.navigationRoute);
+        this.navigationRoute = null;
+      }
+
+      // 停止并清除动画
+      if (this.trackAnimation) {
+        this.trackAnimation.cancel();
+        this.trackAnimation = null;
+      }
+
+      // 清除动画标记
+      if (this.animationMarker) {
+        this.baiduMap.removeOverlay(this.animationMarker);
+        this.animationMarker = null;
+      }
+
+      // 清除起点和终点标记
+      if (this.routeStartMarker) {
+        this.baiduMap.removeOverlay(this.routeStartMarker);
+        this.routeStartMarker = null;
+      }
+      if (this.routeEndMarker) {
+        this.baiduMap.removeOverlay(this.routeEndMarker);
+        this.routeEndMarker = null;
+      }
+    },
+    async geocodeBaidu(address) {
+      try {
+        if (typeof window.BMapGL === 'undefined') {
+          console.warn('BMapGL 未定义，无法进行地理编码');
+          return;
+        }
+        
+        const geocoder = new window.BMapGL.Geocoder();
+        geocoder.getPoint(
+          address,
+          (point) => {
+            if (point) {
+              // 创建标记
+              const marker = new window.BMapGL.Marker(point);
+              this.baiduMap.addOverlay(marker);
+              
+              // 创建信息窗口
+              const infoWindow = new window.BMapGL.InfoWindow(
+                `<div style="padding: 10px;">
+                  <strong>${address}</strong><br/>
+                  旅行目的地
+                </div>`,
+                { width: 200, height: 80 }
+              );
+              
+              // 点击标记显示信息窗口
+              marker.addEventListener('click', () => {
+                this.baiduMap.openInfoWindow(infoWindow, point);
+              });
+              
+              this.baiduMarkers.push(marker);
+              
+              // 调整地图视野以包含标记点
+              this.baiduMap.centerAndZoom(point, 10);
+            } else {
+              console.warn('地理编码失败，未找到地址:', address);
+              // 如果地理编码失败，使用默认中心
+              const defaultCenter = new window.BMapGL.Point(116.4074, 39.9042);
+              this.baiduMap.centerAndZoom(defaultCenter, 5);
+            }
+          },
+          '全国'
+        );
       } catch (e) {
-        console.warn('地理编码失败:', name, e);
-        return null;
+        console.warn('百度地理编码失败:', address, e);
+        // 使用默认中心
+        if (this.baiduMap && typeof window.BMapGL !== 'undefined') {
+          const defaultCenter = new window.BMapGL.Point(116.4074, 39.9042);
+          this.baiduMap.centerAndZoom(defaultCenter, 5);
+        }
       }
     },
     
@@ -1016,6 +1544,111 @@ export default {
   color: #999;
 }
 
+.activity-route-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.route-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  border: 1px solid #e1e5e9;
+  border-radius: 6px;
+  background: white;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.route-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.05);
+}
+
+.route-btn.active {
+  border-color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  font-weight: 600;
+}
+
+.route-btn-origin.active {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.route-btn-destination.active {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
+.route-btn svg {
+  flex-shrink: 0;
+}
+
+.route-selection-info {
+  padding: 12px 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.route-selection-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.route-label {
+  font-weight: 600;
+  color: #333;
+}
+
+.route-label-origin {
+  color: #10b981;
+}
+
+.route-label-destination {
+  color: #ef4444;
+}
+
+.route-value {
+  flex: 1;
+  color: #666;
+}
+
+.route-clear-btn {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: #e1e5e9;
+  color: #999;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.route-clear-btn:hover {
+  background: #d1d5d9;
+  color: #666;
+}
+
 /* 地图区域 */
 .map-section {
   display: flex;
@@ -1068,7 +1701,7 @@ export default {
   overflow: hidden;
 }
 
-.leaflet-map {
+.baidu-map {
   width: 100%;
   height: 100%;
 }
