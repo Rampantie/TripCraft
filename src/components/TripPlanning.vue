@@ -117,6 +117,16 @@
                     </svg>
                     {{ isNavigating ? '规划路线中...' : '规划路线' }}
                   </button>
+                  <button
+                    v-if="hasRouteOnMap"
+                    class="btn-secondary"
+                    @click="clearAllRoute"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    清理路线
+                  </button>
                   <button 
                     v-if="planId && isReadOnly && planStatus !== 'completed'"
                     class="btn-primary"
@@ -287,6 +297,7 @@ export default {
       animationMarker: null,
       routeStartMarker: null, // 路线起点标记
       routeEndMarker: null, // 路线终点标记
+      drivingRouteInstance: null, // DrivingRoute 实例，用于清除自动创建的标记
       tripDetails: {
         destination: '日本东京、京都、大阪',
         startDate: '2024-04-01',
@@ -403,6 +414,10 @@ export default {
   computed: {
     totalCost() {
       return Object.values(this.costBreakdown).reduce((total, cost) => total + cost, 0);
+    },
+    hasRouteOnMap() {
+      // 检查地图上是否有路线、起点标记、终点标记或动画
+      return !!(this.navigationRoute || this.routeStartMarker || this.routeEndMarker || this.animationMarker || this.trackAnimation);
     }
   },
   mounted() {
@@ -836,6 +851,12 @@ export default {
         const startMarker = new window.BMapGL.Marker(originPoint, { icon: startIcon });
         const endMarker = new window.BMapGL.Marker(destinationPoint, { icon: endIcon });
 
+        // 添加自定义属性，方便后续识别和清除
+        startMarker._routeRelated = true;
+        startMarker._isStartPoint = true;
+        endMarker._routeRelated = true;
+        endMarker._isEndPoint = true;
+
         this.baiduMap.addOverlay(startMarker);
         this.baiduMap.addOverlay(endMarker);
         // 保存标记引用以便清除
@@ -861,6 +882,15 @@ export default {
 
         // 路线规划：使用驾车路线规划
         // 注意：百度地图路线规划主要支持中国境内，国外地址可能无法规划路线
+        // 先清除之前的 DrivingRoute 实例
+        if (this.drivingRouteInstance && typeof this.drivingRouteInstance.clearResults === 'function') {
+          try {
+            this.drivingRouteInstance.clearResults();
+          } catch (e) {
+            console.warn('清除之前的路线规划结果失败:', e);
+          }
+        }
+        
         const driving = new window.BMapGL.DrivingRoute(this.baiduMap, {
           renderOptions: {
             map: this.baiduMap,
@@ -1018,6 +1048,9 @@ export default {
           }
         });
 
+        // 保存 DrivingRoute 实例，以便后续清除
+        this.drivingRouteInstance = driving;
+        
         // 搜索路线
         driving.search(originPoint, destinationPoint);
 
@@ -1103,6 +1136,158 @@ export default {
         this.baiduMap.removeOverlay(this.routeEndMarker);
         this.routeEndMarker = null;
       }
+    },
+    clearAllRoute() {
+      // 清理地图上的所有路线、标记和动画
+      if (!this.baiduMap) {
+        return;
+      }
+
+      // 先清除 DrivingRoute 自动创建的标记和路线
+      if (this.drivingRouteInstance && typeof this.drivingRouteInstance.clearResults === 'function') {
+        try {
+          this.drivingRouteInstance.clearResults();
+          console.log('✅ 已清除 DrivingRoute 自动创建的标记和路线');
+        } catch (e) {
+          console.warn('清除 DrivingRoute 结果失败:', e);
+        }
+      }
+
+      // 调用原有的清理方法
+      this.clearNavigationRoute();
+
+      try {
+        // 获取地图上的所有覆盖物
+        const overlays = this.baiduMap.getOverlays();
+        if (overlays && overlays.length > 0) {
+          // 需要保留的标记：旅行目的地的标记（在 baiduMarkers 中）
+          const markersToKeep = new Set(this.baiduMarkers);
+          
+          overlays.forEach(overlay => {
+            try {
+              // 跳过需要保留的标记
+              if (markersToKeep.has(overlay)) {
+                return;
+              }
+              
+              // 清除所有 Polyline（路线）
+              if (overlay instanceof window.BMapGL.Polyline) {
+                this.baiduMap.removeOverlay(overlay);
+                return;
+              }
+              
+              // 清除所有 Marker（标记），但保留旅行目的地的标记
+              if (overlay instanceof window.BMapGL.Marker) {
+                // 检查标记的图标，判断是否是起点或终点标记
+                let shouldRemove = false;
+                
+                try {
+                  // 方法1: 检查图标是否是起点或终点的图标（绿色或红色圆形）
+                  if (overlay.getIcon && typeof overlay.getIcon === 'function') {
+                    const icon = overlay.getIcon();
+                    if (icon && icon.imageUrl) {
+                      const imageUrl = String(icon.imageUrl);
+                      // Base64 SVG 中包含绿色(#10b981)或红色(#ef4444)的圆形图标
+                      if (imageUrl.includes('#10b981') || imageUrl.includes('#ef4444') || 
+                          imageUrl.includes('data:image/svg+xml')) {
+                        // 进一步检查是否是起点或终点标记（通过解码Base64检查颜色）
+                        try {
+                          const base64Match = imageUrl.match(/base64,(.+)/);
+                          if (base64Match) {
+                            const svgContent = atob(base64Match[1]);
+                            if (svgContent.includes('#10b981') || svgContent.includes('#ef4444')) {
+                              shouldRemove = true;
+                            }
+                          }
+                        } catch (e) {
+                          // 如果解码失败，如果有 base64 svg 也可能是路线相关标记
+                          if (imageUrl.includes('data:image/svg+xml;base64')) {
+                            shouldRemove = true;
+                          }
+                        }
+                      }
+                    }
+                  }
+                  
+                  // 方法2: 检查标记的标签内容是否包含"起"或"终"字
+                  if (!shouldRemove && overlay.getLabel && typeof overlay.getLabel === 'function') {
+                    const label = overlay.getLabel();
+                    if (label) {
+                      // 检查 label 的各种可能属性
+                      const content = String(label.content || label.text || label.innerHTML || '');
+                      if (content.includes('起') || content.includes('终')) {
+                        shouldRemove = true;
+                      }
+                    }
+                  }
+                  
+                  // 方法3: 检查标记的 DOM 元素内容（百度地图可能在 DOM 中显示"起"或"终"字）
+                  if (!shouldRemove) {
+                    try {
+                      // 获取标记的 DOM 元素
+                      const markerElement = overlay.zb && overlay.zb.divContainer || 
+                                          overlay.getContainer && overlay.getContainer();
+                      if (markerElement) {
+                        const textContent = markerElement.textContent || markerElement.innerText || '';
+                        if (textContent.includes('起') || textContent.includes('终')) {
+                          shouldRemove = true;
+                        }
+                      }
+                    } catch (e) {
+                      // 如果无法获取 DOM 元素，忽略
+                    }
+                  }
+                  
+                  // 方法4: 如果标记不在保留列表中，且可能是路线相关的标记，清除它
+                  // 这样可以清除可能通过 DrivingRoute 自动创建的标记
+                  if (!shouldRemove && !markersToKeep.has(overlay)) {
+                    // 检查标记是否有自定义属性标记为路线相关
+                    if (overlay._routeRelated === true || overlay._isStartPoint || overlay._isEndPoint) {
+                      shouldRemove = true;
+                    }
+                  }
+                  
+                  // 方法5: 检查标记的内部属性（百度地图可能在某些内部属性中存储文本）
+                  if (!shouldRemove) {
+                    try {
+                      // 检查标记对象的所有字符串属性
+                      for (let key in overlay) {
+                        if (typeof overlay[key] === 'string') {
+                          const value = overlay[key];
+                          if (value.includes('起') || value.includes('终')) {
+                            shouldRemove = true;
+                            break;
+                          }
+                        }
+                      }
+                    } catch (e) {
+                      // 忽略检查内部属性时的错误
+                    }
+                  }
+                  
+                  if (shouldRemove) {
+                    this.baiduMap.removeOverlay(overlay);
+                    console.log('✅ 已清除包含"起"或"终"字的标记');
+                  }
+                } catch (e) {
+                  // 如果检查标记属性时出错，跳过这个标记或尝试清除它
+                  console.warn('检查标记时出错:', e);
+                }
+              }
+            } catch (error) {
+              console.warn('处理覆盖物时出错:', error);
+            }
+          });
+        }
+      } catch (error) {
+        console.warn('清理覆盖物时出错:', error);
+      }
+      
+      // 清除起点和终点选择
+      this.selectedOrigin = null;
+      this.selectedDestination = null;
+      
+      this.showMessage('已清理地图上的所有路线和标记', 'info');
     },
     async geocodeBaidu(address) {
       try {
