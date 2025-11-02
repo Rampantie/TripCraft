@@ -62,6 +62,23 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore();
   
+  // 如果认证状态还未初始化，先初始化
+  if (!authStore.user && !authStore.isLoading) {
+    await authStore._initAuthAsync();
+  }
+  
+  // 如果认证状态正在加载中，等待加载完成
+  if (authStore.isLoading) {
+    // 等待认证状态加载完成（最多等待 3 秒）
+    let waitCount = 0;
+    const maxWait = 30; // 最多等待 30 次（每次 100ms，总共 3 秒）
+    
+    while (authStore.isLoading && waitCount < maxWait) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      waitCount++;
+    }
+  }
+  
   // 如果路由需要认证
   if (to.meta.requiresAuth) {
     // 检查用户是否已登录

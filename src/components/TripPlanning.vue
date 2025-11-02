@@ -150,6 +150,13 @@
                   <span class="route-value">{{ getActivityDisplay(selectedDestination) }}</span>
                   <button class="route-clear-btn" @click="clearDestination" title="清除终点">×</button>
                 </div>
+                <div v-if="selectedOrigin && selectedDestination" class="route-hint">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                    <path d="M12 8V12M12 16H12.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  </svg>
+                  <span>提示：路线规划仅支持国内地点，国外地点间将显示虚线指示</span>
+                </div>
               </div>
               <div class="map-content">
                 <div ref="baiduMap" class="baidu-map"></div>
@@ -662,43 +669,62 @@ export default {
       });
       this.baiduMarkers = [];
 
-      // 优先使用 tripDetails 中的经纬度
-      const lat = Number(this.tripDetails.latitude);
-      const lng = Number(this.tripDetails.longitude);
-      
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        // 百度地图使用 BD09 坐标系，如果传入的是 WGS84 坐标，需要转换
-        // 但通常 AI 返回的坐标可能需要转换，这里先直接使用
-        // 注意：百度地图的坐标顺序是 [经度, 纬度]
-        const point = new window.BMapGL.Point(lng, lat);
+      // 检查是否是默认数据，如果是默认数据且没有 planId，则不创建标记
+      // 默认 destination 是 '日本东京、京都、大阪'
+      const isDefaultData = this.tripDetails.destination === '日本东京、京都、大阪' && 
+                           !this.planId;
+
+      // 如果有 planId（查看已保存的计划），则创建标记
+      // 如果没有 planId 但是有经纬度（实际计划数据），也创建标记
+      // 如果没有 planId 且是默认数据，则不创建标记
+      if (this.planId || (this.tripDetails.latitude && this.tripDetails.longitude) || !isDefaultData) {
+        // 优先使用 tripDetails 中的经纬度
+        const lat = Number(this.tripDetails.latitude);
+        const lng = Number(this.tripDetails.longitude);
         
-        // 创建标记
-        const marker = new window.BMapGL.Marker(point);
-        this.baiduMap.addOverlay(marker);
-        
-        // 创建信息窗口
-        const infoWindow = new window.BMapGL.InfoWindow(
-          `<div style="padding: 10px;">
-            <strong>${this.tripDetails.destination || '目的地'}</strong><br/>
-            旅行目的地
-          </div>`,
-          { width: 200, height: 80 }
-        );
-        
-        // 点击标记显示信息窗口
-        marker.addEventListener('click', () => {
-          this.baiduMap.openInfoWindow(infoWindow, point);
-        });
-        
-        this.baiduMarkers.push(marker);
-        
-        // 调整地图视野以包含标记点
-        this.baiduMap.centerAndZoom(point, 10);
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          // 百度地图使用 BD09 坐标系，如果传入的是 WGS84 坐标，需要转换
+          // 但通常 AI 返回的坐标可能需要转换，这里先直接使用
+          // 注意：百度地图的坐标顺序是 [经度, 纬度]
+          const point = new window.BMapGL.Point(lng, lat);
+          
+          // 创建标记
+          const marker = new window.BMapGL.Marker(point);
+          this.baiduMap.addOverlay(marker);
+          
+          // 创建信息窗口
+          const infoWindow = new window.BMapGL.InfoWindow(
+            `<div style="padding: 10px;">
+              <strong>${this.tripDetails.destination || '目的地'}</strong><br/>
+              旅行目的地
+            </div>`,
+            { width: 200, height: 80 }
+          );
+          
+          // 点击标记显示信息窗口
+          marker.addEventListener('click', () => {
+            this.baiduMap.openInfoWindow(infoWindow, point);
+          });
+          
+          this.baiduMarkers.push(marker);
+          
+          // 调整地图视野以包含标记点
+          this.baiduMap.centerAndZoom(point, 10);
+        } else {
+          // 若无经纬度，尝试使用百度地图的地理编码服务
+          const destination = this.tripDetails.destination || '';
+          if (destination) {
+            await this.geocodeBaidu(destination);
+          }
+        }
       } else {
-        // 若无经纬度，尝试使用百度地图的地理编码服务
-        const destination = this.tripDetails.destination || '';
-        if (destination) {
-          await this.geocodeBaidu(destination);
+        // 如果是默认数据且没有 planId，只调整地图中心，不创建标记
+        const lat = Number(this.tripDetails.latitude);
+        const lng = Number(this.tripDetails.longitude);
+        
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          const point = new window.BMapGL.Point(lng, lat);
+          this.baiduMap.centerAndZoom(point, 10);
         }
       }
     },
@@ -1041,7 +1067,7 @@ export default {
                 });
                 this.baiduMap.addOverlay(polyline);
                 this.navigationRoute = polyline;
-                this.showMessage('已显示起点和终点之间的直线连接（虚线），仅供参考', 'warning');
+                this.showMessage('路线规划仅支持国内地点，国外地点间已显示虚线指示（仅供参考）', 'warning');
               }
             }
             this.isNavigating = false;
@@ -1832,6 +1858,28 @@ export default {
 .route-clear-btn:hover {
   background: #d1d5d9;
   color: #666;
+}
+
+.route-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #fff3cd;
+  border-left: 3px solid #ffc107;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #856404;
+  margin-top: 8px;
+}
+
+.route-hint svg {
+  flex-shrink: 0;
+  color: #ffc107;
+}
+
+.route-hint span {
+  line-height: 1.4;
 }
 
 /* 地图区域 */

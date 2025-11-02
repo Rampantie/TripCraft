@@ -86,6 +86,7 @@ TripCraft/
     package.json
   Dockerfile.frontend
   Dockerfile.backend
+  nginx.conf
 ```
 
 ## 🚀 快速开始（Docker 方式）
