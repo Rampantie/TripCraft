@@ -39,14 +39,6 @@
               </div>
               
               <div class="form-options">
-                <label class="checkbox-container">
-                  <input 
-                    v-model="loginForm.rememberMe"
-                    type="checkbox"
-                    class="checkbox-input"
-                  />
-                  <span class="checkbox-label">记住我</span>
-                </label>
                 <router-link to="/forgot-password" class="forgot-password">忘记密码？</router-link>
               </div>
               
@@ -108,13 +100,28 @@ export default {
     return {
       loginForm: {
         email: '',
-        password: '',
-        rememberMe: false
+        password: ''
       },
       isLoading: false,
       errorMessage: '',
       successMessage: ''
     }
+  },
+  watch: {
+    // 监听路由变化，确保每次进入登录页时清除表单数据
+    '$route'(to, from) {
+      if (to.name === 'Login') {
+        this.clearForm();
+      }
+    }
+  },
+  mounted() {
+    // 进入登录页时清除表单数据
+    this.clearForm();
+  },
+  activated() {
+    // 如果使用了keep-alive，在激活时也清除表单数据
+    this.clearForm();
   },
   computed: {
     isFormValid() {
@@ -122,6 +129,13 @@ export default {
     }
   },
   methods: {
+    clearForm() {
+      // 清除登录表单数据
+      this.loginForm.email = '';
+      this.loginForm.password = '';
+      this.errorMessage = '';
+      this.successMessage = '';
+    },
     async handleLogin() {
       if (!this.isFormValid) return;
 
@@ -280,7 +294,7 @@ export default {
 
 .form-options {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin: 8px 0;
 }
