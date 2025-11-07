@@ -253,11 +253,6 @@
           </div>
         </div>
 
-        <!-- 旅行计划列表的消息提示 -->
-        <div v-if="planMessage" class="plan-message" :class="{ 'success': planMessage.includes('成功'), 'error': planMessage.includes('失败') }">
-          {{ planMessage }}
-        </div>
-
         <!-- 花费统计 -->
         <div class="spending-card">
           <h3 class="card-title">花费统计</h3>
@@ -390,8 +385,7 @@ export default {
       echartInstance: null,
       miniBarInstance: null,
       showChangeNameModal: false,
-      changeNameValue: '',
-      planMessage: '' // 旅行计划操作的提示信息
+      changeNameValue: ''
     }
   },
   computed: {
@@ -771,10 +765,10 @@ export default {
           this.updateMiniBar();
         });
         
-        this.showPlanMessage('计划删除成功！', true);
+        this.showMessage('计划删除成功！', true);
       } catch (e) {
         console.error('删除计划失败:', e);
-        this.showPlanMessage('删除计划失败，请稍后再试', false);
+        this.showMessage('删除计划失败，请稍后再试', false);
       }
     },
     async revertToPlanning(planId) {
@@ -808,10 +802,10 @@ export default {
           this.updateMiniBar();
         });
         
-        this.showPlanMessage('已设为规划中，实际花费已清零', true);
+        this.showMessage('已设为规划中，实际花费已清零', true);
       } catch (e) {
         console.error('设为规划中失败:', e);
-        this.showPlanMessage('设为规划中失败，请稍后重试', false);
+        this.showMessage('设为规划中失败，请稍后重试', false);
       }
     },
     handleDeleteConfirm() {
@@ -891,14 +885,6 @@ export default {
           this.saveMessage = '';
         }, 3000);
       }
-    },
-    showPlanMessage(text, success) {
-      this.planMessage = text;
-      
-      // 3秒后自动清除提示信息
-      setTimeout(() => {
-        this.planMessage = '';
-      }, 3000);
     },
     openChangeNameModal() {
       this.changeNameValue = this.userInfo.name || '';
@@ -1382,42 +1368,6 @@ export default {
 
 .delete-btn:hover {
   background: #fecaca;
-}
-
-/* 旅行计划操作提示信息 */
-.plan-message {
-  margin-top: 12px;
-  padding: 12px 20px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 500;
-  text-align: center;
-  transition: all 0.3s ease;
-  animation: slideDown 0.3s ease;
-  grid-column: 1 / -1;
-}
-
-.plan-message.success {
-  background: #d1fae5;
-  color: #059669;
-  border: 1px solid #a7f3d0;
-}
-
-.plan-message.error {
-  background: #fee2e2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 /* 花费统计卡片 */
