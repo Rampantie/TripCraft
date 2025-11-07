@@ -747,10 +747,24 @@ export default {
           .eq('id', planId)
           .eq('user_id', this.authStore.user.id);
         if (error) throw error;
+        
         // 前端列表移除
         this.travelPlansList = this.travelPlansList.filter(p => p.id !== planId);
         this.travelPlansCountInternal = this.travelPlansList.length;
         this.showDeleteModal = false;
+        
+        // 等待数据库触发器更新完成（给一个短暂延迟）
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // 重新加载用户档案以更新统计数据（total_spending, completed_trips_count等）
+        await this.authStore.loadUserProfile();
+        
+        // 更新图表
+        this.$nextTick(() => {
+          this.updateEcharts();
+          this.updateMiniBar();
+        });
+        
         this.showMessage('计划删除成功！', true);
       } catch (e) {
         console.error('删除计划失败:', e);
@@ -767,6 +781,7 @@ export default {
           .select('id, status, actual_spending')
           .single();
         if (error) throw error;
+        
         // 更新本地列表
         const idx = this.travelPlansList.findIndex(p => p.id === planId);
         if (idx !== -1) {
@@ -774,6 +789,19 @@ export default {
           this.travelPlansList[idx].actualSpending = 0;
         }
         this.travelPlansCountInternal = this.travelPlansList.length;
+        
+        // 等待数据库触发器更新完成
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // 重新加载用户档案以更新统计数据
+        await this.authStore.loadUserProfile();
+        
+        // 更新图表
+        this.$nextTick(() => {
+          this.updateEcharts();
+          this.updateMiniBar();
+        });
+        
         this.showMessage('已设为规划中，实际花费已清零', true);
       } catch (e) {
         console.error('设为规划中失败:', e);
